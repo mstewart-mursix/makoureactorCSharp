@@ -1,0 +1,9 @@
+{
+  "backend": "codex",
+  "codex_executable": "codex",
+  "codex_model": "",
+  "timeout_ms": 0,
+  "endpoint": "http://localhost:1234/v1/chat/completions",
+  "api_key": "lm-studio",
+  "model": "qwen/qwen3-coder-30b"
+}

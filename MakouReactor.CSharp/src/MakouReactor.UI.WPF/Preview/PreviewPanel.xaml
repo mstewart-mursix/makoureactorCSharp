@@ -1,0 +1,10 @@
+<UserControl x:Class="MakouReactor.UI.WPF.Preview.PreviewPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:preview="clr-namespace:MakouReactor.UI.WPF.Preview"
+             MinHeight="100">
+    <Grid>
+        <preview:BackgroundPreviewControl x:Name="BackgroundPreview"/>
+        <preview:ModelPreviewControl x:Name="ModelPreview" Visibility="Collapsed"/>
+    </Grid>
+</UserControl>

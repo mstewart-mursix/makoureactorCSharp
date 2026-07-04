@@ -60,6 +60,10 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 option(GUI "Build the gui executable" ON)
 option(CLI "Build the cli executable" OFF)
 
+# Feature flags
+# Feature flags
+option(MR_ENABLE_LLM_GENERATOR "Enable LLM Scene Generator feature" ON)
+
 add_compile_definitions(
     QT_DISABLE_DEPRECATED_BEFORE=0x050F00
     #QT_RESTRICTED_CAST_FROM_ASCII
@@ -73,7 +77,14 @@ add_compile_definitions(
     MAKOU_REACTOR_VERSION_TWEAK=0
 )
 
-find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Widgets OpenGLWidgets Svg OpenGL LinguistTools Core5Compat Xml Quick REQUIRED)
+if(MR_ENABLE_LLM_GENERATOR)
+    add_compile_definitions(MR_ENABLE_LLM_GENERATOR=1)
+endif()
+
+find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Widgets OpenGLWidgets Svg OpenGL LinguistTools Core5Compat Xml Quick Network REQUIRED)
+if(BUILD_TESTING)
+    find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Test REQUIRED)
+endif()
 find_package(ZLIB REQUIRED)
 
 set(REQUIRED_FF7TK_VERSION 1.2.0)
@@ -347,6 +358,28 @@ set(PROJECT_SOURCES
     "src/widgets/ExportChunksDialog.h"
 )
 
+# Add LLM sources only when enabled
+if(MR_ENABLE_LLM_GENERATOR)
+    list(APPEND PROJECT_SOURCES
+        src/ui/LLMSceneDialog.h
+        src/ui/LLMSceneDialog.cpp
+        src/ai/LLMClient.h
+        src/ai/LLMClient.cpp
+        src/ai/LLMSchemas.h
+        src/ai/PromptBuilder.h
+        src/ai/PromptBuilder.cpp
+        src/ai/ScenePlan.h
+        src/ai/ScenePlanParser.h
+        src/ai/ScenePlanParser.cpp
+        src/ai/ScenePlanMapper.h
+        src/ai/ScenePlanMapper.cpp
+        src/ai/LayoutGenerator.h
+        src/ai/LayoutGenerator.cpp
+        src/ai/ScenePlanValidator.h
+        src/ai/ScenePlanValidator.cpp
+    )
+endif()
+
 if(APPLE)
     list(APPEND PROJECT_SOURCES
         "src/core/SystemColor.mm"
@@ -505,8 +538,15 @@ if(APPLE)
     set_source_files_properties(${ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 elseif (WIN32)
     set(ICON_FILE "src/qt/images/logo-shinra.ico")
-    set(EXTRA_RESOURCES_GUI "src/qt/${RELEASE_NAME}.rc")
-    set(EXTRA_RESOURCES_CLI "${EXTRA_RESOURCES_GUI}")
+    # Only include the .rc file when building with MSVC. MinGW windres
+    # does not see the CMake-provided version defines and fails to parse.
+    if (MSVC)
+        set(EXTRA_RESOURCES_GUI "src/qt/${RELEASE_NAME}.rc")
+        set(EXTRA_RESOURCES_CLI "${EXTRA_RESOURCES_GUI}")
+    else()
+        set(EXTRA_RESOURCES_GUI "")
+        set(EXTRA_RESOURCES_CLI "")
+    endif()
 endif()
 
 # GUI
@@ -518,6 +558,7 @@ if(GUI)
         Qt::Widgets
         Qt::OpenGLWidgets
         Qt::Svg
+        Qt::Network
         ZLIB::ZLIB
         ff7tk::ff7tk
         ff7tk::ff7tkData
@@ -548,17 +589,35 @@ if(GUI)
         set_target_properties(${GUI_TARGET} PROPERTIES OUTPUT_NAME "${PROJECT_NAME}")
     endif()
 
-    if (WIN32)
-        target_compile_options(
-            ${GUI_TARGET}
-            PRIVATE /Qpar
-            PRIVATE /MP
-        )
-    endif()
+    
 
     qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR}/src ${TS_FILES} OPTIONS -no-ui-lines -locations none)
     # Force lupdate
     add_custom_target(app_translations ALL DEPENDS ${QM_FILES})
+endif()
+
+# Add LLM sources only when enabled
+if(MR_ENABLE_LLM_GENERATOR AND GUI)
+    target_sources(${GUI_TARGET} PRIVATE
+        src/ui/LLMSceneDialog.h
+        src/ui/LLMSceneDialog.cpp
+        src/ai/LLMClient.h
+        src/ai/LLMClient.cpp
+        src/ai/LLMSchemas.h
+        src/ai/PromptBuilder.h
+        src/ai/PromptBuilder.cpp
+        src/ai/ScenePlan.h
+        src/ai/ScenePlanParser.h
+        src/ai/ScenePlanParser.cpp
+        src/ai/ScenePlanValidator.h
+        src/ai/ScenePlanValidator.cpp
+        src/ai/ScenePlanMapper.h
+        src/ai/ScenePlanMapper.cpp
+        src/ai/LayoutGenerator.h
+        src/ai/LayoutGenerator.cpp
+        src/ai/LLMConfig.h
+        src/ai/LLMConfig.cpp
+    )
 endif()
 
 # CLI
@@ -575,13 +634,7 @@ if(CLI)
     target_compile_definitions(${CLI_TARGET}
         PRIVATE MR_CONSOLE=1 QT_NO_DEBUG_OUTPUT=1
     )
-    if (WIN32)
-        target_compile_options(
-            ${CLI_TARGET}
-            PRIVATE /Qpar
-            PRIVATE /MP
-        )
-    endif()
+    
 endif()
 
 include(GNUInstallDirs)
@@ -666,3 +719,23 @@ set(CPACK_SOURCE_IGNORE_FILES ".git/*;*.user;*.yml;*.github/*")
 set(CPACK_SOURCE_GENERATOR "ZIP;TGZ")
 
 include(CPack)
+# Tests (Qt Test)
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(mr_tests
+        tests/TestScenePlan.cpp
+        src/ai/ScenePlan.h
+        src/ai/ScenePlanParser.h
+        src/ai/ScenePlanParser.cpp
+        src/ai/ScenePlanValidator.h
+        src/ai/ScenePlanValidator.cpp
+        src/ai/LayoutGenerator.h
+        src/ai/LayoutGenerator.cpp
+        src/ai/ScenePlanMapper.h
+        src/ai/ScenePlanMapper.cpp
+    )
+    target_link_libraries(mr_tests PRIVATE Qt6::Core Qt6::Test)
+    target_include_directories(mr_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(mr_tests PRIVATE LLM_MAPPER_PREVIEW_ONLY=1)
+    add_test(NAME ScenePlanTests COMMAND mr_tests)
+endif()

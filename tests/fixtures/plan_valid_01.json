@@ -1,0 +1,27 @@
+{
+  "meta": { "title": "Test Scene", "model": "llama3", "version": "1.0" },
+  "actors": [
+    { "id": "cloud", "displayName": "Cloud", "position": {"x": 100, "y": 120}, "facing": "S" },
+    { "id": "tifa",  "displayName": "Tifa",  "position": {"x": 140, "y": 120}, "facing": "W" }
+  ],
+  "dialog": [
+    { "speakerId": "cloud", "text": "We should hurry." },
+    { "speakerId": "tifa",  "text": "Right behind you." }
+  ],
+  "events": [
+    {
+      "id": "on_enter_intro",
+      "trigger": "on_enter",
+      "steps": [
+        { "type": "say", "actorId": "cloud", "text": "Stay alert." },
+        { "type": "wait", "ms": 500 },
+        { "type": "move", "actorId": "tifa", "to": {"x": 150, "y": 120}, "speed": 1.0 }
+      ]
+    }
+  ],
+  "layout": {
+    "spawnPoint": { "x": 90, "y": 120 },
+    "props": [ { "id": "barrel", "position": {"x": 60, "y": 120} } ]
+  }
+}
+

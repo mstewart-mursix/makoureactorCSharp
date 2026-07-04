@@ -37,6 +37,12 @@
 
 #include <Splitter.h>
 
+// Feature: LLM generator (UI)
+#ifdef MR_ENABLE_LLM_GENERATOR
+#include "ui/LLMSceneDialog.h"
+#include "ai/LLMClient.h"
+#endif
+
 class Window : public QMainWindow, ArchiveObserver
 {
     Q_OBJECT
@@ -97,6 +103,9 @@ public slots:
 	void searchManager();
 	void archiveManager();
 	void miscOperations();
+#ifdef MR_ENABLE_LLM_GENERATOR
+	void openLLMGenerator();
+#endif
 	void about();
 	void setEditorPageIndex(int index);
 private slots:
@@ -143,6 +152,9 @@ private:
 	QAction *actionRun, *actionModels;
 	QAction *actionEncounter;
 	QAction *actionMisc, *actionMiscOperations, *actionJp_txt;
+#ifdef MR_ENABLE_LLM_GENERATOR
+	QAction *actionGenerateLLM{nullptr};
+#endif
 	QMenu *menuLang;
 
 	ScriptManager *_scriptManager;
@@ -151,6 +163,10 @@ private:
 	TutWidget *_tutManager;
 	WalkmeshManager *_walkmeshManager;
 	BGDialog *_backgroundManager;
+#ifdef MR_ENABLE_LLM_GENERATOR
+	LLMSceneDialog *_llmDialog{nullptr};
+    LLMClient *_llmClient{nullptr};
+#endif
 
 	QStackedWidget *_mainStackedWidget, *_fieldStackedWidget;
 	LgpWidget *_lgpWidget;

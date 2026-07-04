@@ -1,0 +1,95 @@
+<Window x:Class="MakouReactor.UI.WPF.Walkmesh.WalkmeshManagerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Walkmesh" Height="560" Width="900"
+        WindowStartupLocation="CenterOwner"
+        MinHeight="420" MinWidth="700">
+    <DockPanel>
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusLabel" Text="Ready"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <ToolBar DockPanel.Dock="Top" Height="30">
+            <TextBlock x:Name="FieldLabel" VerticalAlignment="Center" Foreground="#555" Text="{Binding FieldName}"/>
+            <Separator/>
+            <Button x:Name="AddTriangleButton" ToolTip="Add triangle" Click="AddTriangle_Click">+</Button>
+            <Button x:Name="RemoveTriangleButton" ToolTip="Remove triangle" IsEnabled="{Binding CanRemoveTriangle}" Click="RemoveTriangle_Click">-</Button>
+            <Separator/>
+            <Button x:Name="ApplyWalkmeshButton"
+                    ToolTip="Apply walkmesh changes to the current field"
+                    IsEnabled="{Binding IsModified, FallbackValue=False, TargetNullValue=False}"
+                    Click="ApplyWalkmesh_Click">Apply</Button>
+        </ToolBar>
+
+        <Grid Margin="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <ListView x:Name="TriangleListView"
+                      ItemsSource="{Binding Triangles}"
+                      SelectedItem="{Binding SelectedTriangle, Mode=TwoWay}">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="Id" DisplayMemberBinding="{Binding Id}" Width="44"/>
+                        <GridViewColumn Header="V0" DisplayMemberBinding="{Binding V0}" Width="150"/>
+                        <GridViewColumn Header="V1" DisplayMemberBinding="{Binding V1}" Width="150"/>
+                        <GridViewColumn Header="V2" DisplayMemberBinding="{Binding V2}" Width="150"/>
+                        <GridViewColumn Header="Access" DisplayMemberBinding="{Binding Access}" Width="130"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+
+            <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"/>
+
+            <Border Grid.Column="2" Background="#1F1F1F" BorderBrush="#333" BorderThickness="1">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Top-down walkmesh preview"
+                               Foreground="#DADADA"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,8"/>
+                    <Viewbox Grid.Row="1" Stretch="Uniform">
+                        <Canvas Width="260" Height="260" Background="#171717">
+                            <ItemsControl x:Name="WalkmeshPreviewItems"
+                                          ItemsSource="{Binding PreviewTriangles}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <Canvas/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Polygon Points="{Binding Points}">
+                                            <Polygon.Style>
+                                                <Style TargetType="Polygon">
+                                                    <Setter Property="Stroke" Value="#9AD1FF"/>
+                                                    <Setter Property="StrokeThickness" Value="1.5"/>
+                                                    <Setter Property="Fill" Value="#335EA9D6"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                            <Setter Property="Stroke" Value="#FFD166"/>
+                                                            <Setter Property="StrokeThickness" Value="3"/>
+                                                            <Setter Property="Fill" Value="#55FFD166"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Polygon.Style>
+                                        </Polygon>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Canvas>
+                    </Viewbox>
+                </Grid>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

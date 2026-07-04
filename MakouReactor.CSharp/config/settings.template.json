@@ -1,0 +1,30 @@
+{
+  "recentFiles": [],
+  "window": {
+    "width": 1280,
+    "height": 900,
+    "left": -1,
+    "top": -1,
+    "leftPanelWidth": 220,
+    "previewPanelHeight": 250,
+    "fieldListVisible": true,
+    "previewVisible": true,
+    "previewMode": "Background",
+    "selectedMainTab": 0
+  },
+  "japaneseText": false,
+  "language": "en",
+  "ff7ExecutablePath": null,
+  "ff7DataPath": null,
+  "lastSelectedFields": {},
+  "llm": {
+    "backend": "codex",
+    "codexExecutable": "codex",
+    "codexModel": "",
+    "timeoutMs": 0,
+    "repairAttempts": 1,
+    "endpoint": "http://localhost:1234/v1/chat/completions",
+    "apiKey": "lm-studio",
+    "model": "qwen/qwen3-coder-30b"
+  }
+}

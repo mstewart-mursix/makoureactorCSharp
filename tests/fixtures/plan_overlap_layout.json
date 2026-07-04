@@ -1,0 +1,11 @@
+{
+  "meta": { "title": "Overlap Test", "model": "mistral", "version": "1.0" },
+  "actors": [
+    { "id": "a1", "position": {"x": 50, "y": 50} },
+    { "id": "a2", "position": {"x": 50, "y": 50} },
+    { "id": "a3", "position": {"x": 50, "y": 50} }
+  ],
+  "events": [],
+  "layout": { "spawnPoint": {"x": 10, "y": 10}, "props": [] }
+}
+

@@ -1366,6 +1366,117 @@ Certains scripts peuvent y faire référence !</translation>
     </message>
 </context>
 <context>
+    <name>LLMSceneDialog</name>
+    <message>
+        <source>Generate Scene via LLM</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Describe the scene: characters, motivations, setting...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Generate Dialog</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Generate Map Layout</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Generate Scripts</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Model name (e.g. mistral, llama3)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Endpoint URL (e.g. http://localhost:1234/v1/chat/completions)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Prompt</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Temperature</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Max Tokens</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Model</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Endpoint URL</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Generate</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="unfinished">Annuler</translation>
+    </message>
+    <message>
+        <source>Dialog preview will appear here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Events and triggers preview will appear here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Actors and positions preview will appear here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Script snippet preview will appear here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Dialog</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Events/Triggers</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Actors</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Scripts</source>
+        <translation type="unfinished">Scripts</translation>
+    </message>
+    <message>
+        <source>Apply</source>
+        <translation type="unfinished">Appliquer</translation>
+    </message>
+    <message>
+        <source>Discard</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No Result</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Nothing to apply yet.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Generation Error</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>LgpDialog</name>
     <message>
         <source>LGP archive manager</source>
@@ -8621,6 +8732,42 @@ scene %1 (%2), group %3 (%4), script %5, line %6: %7</source>
     <message>
         <source>PC Field Map (* *.lzs)</source>
         <translation>Écran field PC (* *.lzs)</translation>
+    </message>
+    <message>
+        <source>LLM Generate</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Generate scene via LLM</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>LLM request failed: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Parser error: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Validation Errors</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Cannot apply due to errors. Please fix input and retry.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Apply Failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Applied</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Created group: %1</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

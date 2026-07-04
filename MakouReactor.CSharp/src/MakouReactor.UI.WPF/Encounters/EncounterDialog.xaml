@@ -1,0 +1,97 @@
+<Window x:Class="MakouReactor.UI.WPF.Encounters.EncounterDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Encounters" Height="560" Width="860"
+        WindowStartupLocation="CenterOwner"
+        MinHeight="420" MinWidth="700">
+    <DockPanel>
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusLabel" Text="Ready"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <ToolBar DockPanel.Dock="Top" Height="30">
+            <TextBlock x:Name="FieldLabel" VerticalAlignment="Center" Foreground="#555" Text="{Binding FieldName}"/>
+            <Separator/>
+            <Button x:Name="ApplyEncounterButton"
+                    ToolTip="Apply encounter edits to the current field"
+                    IsEnabled="{Binding IsModified, FallbackValue=False, TargetNullValue=False}"
+                    Click="ApplyEncounter_Click">Apply</Button>
+        </ToolBar>
+
+        <Grid Margin="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <GroupBox Header="{Binding Table1.Name}">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                        <CheckBox Width="110" Content="Enabled" IsChecked="{Binding Table1.Enabled, Mode=TwoWay}"/>
+                        <TextBlock VerticalAlignment="Center" Margin="0,0,4,0" Text="Rate"/>
+                        <TextBox Width="48" Text="{Binding Table1.Rate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <ListView x:Name="Table1ListView" ItemsSource="{Binding Table1.Rows}">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Type" DisplayMemberBinding="{Binding Type}" Width="90"/>
+                                <GridViewColumn Header="Slot" DisplayMemberBinding="{Binding Slot}" Width="50"/>
+                                <GridViewColumn Header="Battle ID" Width="80">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Width="58" Text="{Binding BattleId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Probability" Width="90">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Width="58" Text="{Binding Probability, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </DockPanel>
+            </GroupBox>
+
+            <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"/>
+
+            <GroupBox Grid.Column="2" Header="{Binding Table2.Name}">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                        <CheckBox Width="110" Content="Enabled" IsChecked="{Binding Table2.Enabled, Mode=TwoWay}"/>
+                        <TextBlock VerticalAlignment="Center" Margin="0,0,4,0" Text="Rate"/>
+                        <TextBox Width="48" Text="{Binding Table2.Rate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <ListView x:Name="Table2ListView" ItemsSource="{Binding Table2.Rows}">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Type" DisplayMemberBinding="{Binding Type}" Width="90"/>
+                                <GridViewColumn Header="Slot" DisplayMemberBinding="{Binding Slot}" Width="50"/>
+                                <GridViewColumn Header="Battle ID" Width="80">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Width="58" Text="{Binding BattleId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Probability" Width="90">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Width="58" Text="{Binding Probability, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </DockPanel>
+            </GroupBox>
+        </Grid>
+    </DockPanel>
+</Window>

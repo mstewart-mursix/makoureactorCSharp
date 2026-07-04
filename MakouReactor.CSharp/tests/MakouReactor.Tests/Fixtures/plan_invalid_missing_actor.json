@@ -1,0 +1,12 @@
+{
+  "meta": { "title": "Bad Scene", "model": "llama3", "version": "1.0" },
+  "actors": [ { "id": "cloud", "position": {"x": 10, "y": 10} } ],
+  "dialog": [ { "speakerId": "tifa", "text": "I'm not in actors list." } ],
+  "events": [
+    {
+      "id": "e1",
+      "trigger": "auto",
+      "steps": [ { "type": "say", "actorId": "tifa", "text": "Speaking..." } ]
+    }
+  ]
+}

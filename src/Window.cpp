@@ -34,6 +34,20 @@
 #include "widgets/EmptyFieldWidget.h"
 
 #include <FF7Text>
+#include <QFutureWatcher>
+
+#ifdef MR_ENABLE_LLM_GENERATOR
+#include "ai/PromptBuilder.h"
+#include "ai/ScenePlanParser.h"
+#include "ai/LayoutGenerator.h"
+#include "ai/ScenePlanValidator.h"
+#include "ai/ScenePlanMapper.h"
+#include "ai/LLMConfig.h"
+// JSON helpers used in LLM flow
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#endif
 
 Window::Window() :
     fieldArchive(nullptr), field(nullptr), firstShow(true), varDialog(nullptr),
@@ -157,7 +171,7 @@ Window::Window() :
 	}
 	connect(menuLang, &QMenu::triggered, this, &Window::changeLanguage);
 
-	menu->addAction(QIcon::fromTheme(QStringLiteral("configure")), tr("&Configuration..."), this, &Window::config)->setMenuRole(QAction::PreferencesRole);
+        menu->addAction(QIcon::fromTheme(QStringLiteral("configure")), tr("&Configuration..."), QKeySequence(), this, &Window::config)->setMenuRole(QAction::PreferencesRole);
 
 	/* Toolbar */
 	toolBar = new QToolBar(tr("Main &toolbar"));
@@ -180,6 +194,14 @@ Window::Window() :
 	toolBar->addAction(actionWalkmesh);
 	actionWalkmesh->setStatusTip(tr("Walkmesh editor"));
 	toolBar->addSeparator();
+
+#ifdef MR_ENABLE_LLM_GENERATOR
+    // LLM Generate button (feature-flagged)
+    actionGenerateLLM = toolBar->addAction(QIcon::fromTheme(QStringLiteral("dialog-question")), tr("LLM Generate"), this, &Window::openLLMGenerator);
+    actionGenerateLLM->setStatusTip(tr("Generate scene via LLM"));
+    actionGenerateLLM->setEnabled(false);
+    toolBar->addSeparator();
+#endif
 
 	toolBar->addWidget(toolBarRight);
 
@@ -972,10 +994,13 @@ void Window::disableEditors()
 		_walkmeshManager->clear();
 		_walkmeshManager->setEnabled(false);
 	}
-	if (_backgroundManager) {
-		_backgroundManager->clear();
-		_backgroundManager->setEnabled(false);
-	}
+        if (_backgroundManager) {
+                _backgroundManager->clear();
+                _backgroundManager->setEnabled(false);
+        }
+#ifdef MR_ENABLE_LLM_GENERATOR
+        if (actionGenerateLLM) actionGenerateLLM->setEnabled(false);
+#endif
 }
 
 void Window::openField(bool reload)
@@ -984,15 +1009,15 @@ void Window::openField(bool reload)
 	actionExport->setEnabled(false);
 	actionChunks->setEnabled(false);
 
-	if (!fieldArchive) {
-		return;
-	}
+        if (!fieldArchive) {
+                return;
+        }
 
 	int mapId = _fieldList->currentMapId();
 	if (mapId < 0) {
-		disableEditors();
-		return;
-	}
+                disableEditors();
+                return;
+        }
 	_fieldList->scrollToItem(_fieldList->selectedItems().first());
 
 //	Data::currentCharNames.clear();
@@ -1026,8 +1051,12 @@ void Window::openField(bool reload)
 		return;
 	}
 
-	actionExport->setEnabled(true);
-	actionChunks->setEnabled(true);
+        actionExport->setEnabled(true);
+        actionChunks->setEnabled(true);
+
+#ifdef MR_ENABLE_LLM_GENERATOR
+        if (actionGenerateLLM) actionGenerateLLM->setEnabled(true);
+#endif
 
 	if (fieldModel) {
 		fieldModel->clear();
@@ -1062,8 +1091,8 @@ void Window::openField(bool reload)
 
 	// Show background preview
 	zoneImage->fill(field, reload);
-	zonePreview->setCurrentIndex(0);
-	zonePreview->setEnabled(true);
+        zonePreview->setCurrentIndex(0);
+        zonePreview->setEnabled(true);
 
 	Section1File *scriptsAndTexts = field->scriptsAndTexts();
 
@@ -1075,13 +1104,15 @@ void Window::openField(bool reload)
 		// Fill group script list
 		_scriptManager->fill(field);
 		_scriptManager->setEnabled(true);
-	} else {
-		_scriptManager->clear();
-		_scriptManager->setEnabled(false);
-	}
+        } else {
+                _scriptManager->clear();
+                _scriptManager->setEnabled(false);
+        }
 
 	searchDialog->updateRunSearch();
 }
+
+
 
 void Window::showModel(int grpScriptID)
 {
@@ -1295,6 +1326,121 @@ void Window::gotoText(int mapID, int textID, qsizetype from, qsizetype size)
 		_textDialog->blockSignals(false);
 	}
 }
+
+#ifdef MR_ENABLE_LLM_GENERATOR
+void Window::openLLMGenerator()
+{
+    if (!_llmDialog) {
+        _llmDialog = new LLMSceneDialog(this);
+        connect(_llmDialog, &LLMSceneDialog::requestGenerate, this, [this](const ScenePrompt& p) {
+            if (!_llmClient) _llmClient = new LLMClient(this);
+
+            // Build request using JSON config and field bounds
+            const LLMConfig cfg = LLMConfig::load();
+            const QRect b = LLMLayout::fieldBounds(field);
+            const QString endpoint = !p.endpointUrl.isEmpty() ? p.endpointUrl : Config::value("LLM_ENDPOINT_URL", cfg.endpoint).toString();
+            const QString model    = !p.modelName.isEmpty()   ? p.modelName   : Config::value("MODEL_NAME", cfg.model).toString();
+            const QString apiKey   = Config::value("LLM_API_KEY", cfg.apiKey).toString();
+
+            auto req = LLM::buildRequestFrom(p,
+                                             endpoint,
+                                             model,
+                                             b.width(), b.height());
+            req.apiKey = apiKey;
+
+            // Async call
+            auto fut = _llmClient->requestScenePlan(req);
+            auto* w = new QFutureWatcher<LLMRawResult>(this);
+            connect(w, &QFutureWatcherBase::finished, this, [this, w]() {
+                const LLMRawResult res = w->result();
+                w->deleteLater();
+                if (!res.ok) {
+                    _llmDialog->showError(tr("LLM request failed: %1").arg(res.error));
+                    return;
+                }
+
+                // Extract content from OpenAI-style response
+                QString content;
+                const QJsonObject root = res.json.object();
+                const auto choices = root.value(QStringLiteral("choices")).toArray();
+                if (!choices.isEmpty()) {
+                    const auto msg = choices.at(0).toObject().value(QStringLiteral("message")).toObject();
+                    content = msg.value(QStringLiteral("content")).toString();
+                }
+                if (content.trimmed().isEmpty()) {
+                    // Some models return raw JSON directly
+                    content = QString::fromUtf8(res.raw);
+                }
+
+                // Parse JSON ScenePlan
+                const auto parsed = ScenePlanParser::parse(content.toUtf8());
+                if (!parsed.ok) {
+                    _llmDialog->showError(tr("Parser error: %1").arg(parsed.error));
+                    _llmDialog->setRawPreview(content);
+                    return;
+                }
+
+                // Adjust layout (bounds/overlaps; snap optional off by default)
+                ScenePlan plan = parsed.plan;
+                const auto layoutRes = LLMLayout::adjust(plan, field, LayoutOptions{});
+
+                // Validate
+                LLMValidate::Options vopt; vopt.maxLineLength = 100; vopt.profanityFilter = false;
+                const auto vres = LLMValidate::validate(plan, field, vopt);
+
+                // Build preview text (summary + layout notes + validation)
+                QString prev;
+                prev += QStringLiteral("Title: %1\nModel: %2 (schema %3)\n")
+                        .arg(plan.meta.title, plan.meta.model, plan.meta.version);
+                prev += QStringLiteral("Actors: %1  Dialog: %2  Events: %3\n")
+                        .arg(plan.actors.size()).arg(plan.dialog.size()).arg(plan.events.size());
+                if (!layoutRes.notes.isEmpty()) {
+                    prev += QStringLiteral("\nAdjustments:\n");
+                    for (const auto& n : layoutRes.notes) prev += QStringLiteral(" - %1\n").arg(n);
+                }
+                if (!vres.issues.isEmpty()) {
+                    prev += QStringLiteral("\nValidation:\n");
+                    for (const auto& i : vres.issues) {
+                        const char* lvl = (i.level == LLMValidate::Severity::Error) ? "ERROR" : (i.level == LLMValidate::Severity::Warn) ? "WARN" : "INFO";
+                        prev += QStringLiteral(" - [%1] %2: %3\n").arg(lvl, i.path, i.message);
+                    }
+                }
+
+                _llmDialog->setRawPreview(prev);
+                _llmDialog->setResult(plan);
+                _llmDialog->setApplyEnabled(!vres.hasErrors());
+            });
+            w->setFuture(fut);
+        });
+
+        connect(_llmDialog, &LLMSceneDialog::applyRequested, this, [this](const ScenePlan& plan) {
+            // Final guard: validate again
+            const auto vres = LLMValidate::validate(plan, field, LLMValidate::Options{});
+            if (vres.hasErrors()) {
+                QMessageBox::warning(this, tr("Validation Errors"), tr("Cannot apply due to errors. Please fix input and retry."));
+                return;
+            }
+            // Apply to field
+            ScenePlanMapper::ApplyOptions aopts; aopts.previewOnly = false;
+            const auto result = ScenePlanMapper::applyToField(plan, field, aopts);
+            if (!result.ok) {
+                QMessageBox::critical(this, tr("Apply Failed"), result.error);
+            } else {
+                QMessageBox::information(this, tr("Applied"), tr("Created group: %1").arg(result.groupName));
+                setModified(true);
+            }
+        });
+
+        connect(_llmDialog, &LLMSceneDialog::discarded, this, [this]() {
+            // No-op for now
+        });
+    }
+
+    _llmDialog->show();
+    _llmDialog->raise();
+    _llmDialog->activateWindow();
+}
+#endif // MR_ENABLE_LLM_GENERATOR
 
 /* void Window::notifyFileChanged(const QString &path)
 {

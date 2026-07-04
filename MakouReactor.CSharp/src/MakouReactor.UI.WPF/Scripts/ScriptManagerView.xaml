@@ -1,0 +1,110 @@
+<UserControl x:Class="MakouReactor.UI.WPF.Scripts.ScriptManagerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="165"/>
+            <ColumnDefinition Width="5"/>
+            <ColumnDefinition Width="110"/>
+            <ColumnDefinition Width="5"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <DockPanel Grid.Column="0">
+            <ToolBar DockPanel.Dock="Top" Height="30">
+                <Button Width="24" ToolTip="Add group" IsEnabled="False">+</Button>
+                <Button Width="24" ToolTip="Remove group" IsEnabled="False">-</Button>
+                <Separator/>
+                <Button Width="24" ToolTip="Move up" IsEnabled="False">^</Button>
+                <Button Width="24" ToolTip="Move down" IsEnabled="False">v</Button>
+            </ToolBar>
+            <ListView x:Name="GroupList" SelectionChanged="GroupList_SelectionChanged">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="Group" DisplayMemberBinding="{Binding Name}" Width="80"/>
+                        <GridViewColumn Header="Type" DisplayMemberBinding="{Binding Type}" Width="60"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+        </DockPanel>
+
+        <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"/>
+
+        <DockPanel Grid.Column="2">
+            <ToolBar DockPanel.Dock="Top" Height="30">
+                <Button Width="24" ToolTip="Add script" IsEnabled="False">+</Button>
+                <Button Width="24" ToolTip="Remove script" IsEnabled="False">-</Button>
+            </ToolBar>
+            <ListView x:Name="ScriptList" SelectionChanged="ScriptList_SelectionChanged">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="Script" DisplayMemberBinding="{Binding Name}" Width="85"/>
+                        <GridViewColumn Header="Size" DisplayMemberBinding="{Binding Size}" Width="55"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+        </DockPanel>
+
+        <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch"/>
+
+        <DockPanel Grid.Column="4">
+            <ToolBar DockPanel.Dock="Top" Height="30">
+                <Button Width="24" ToolTip="Add opcode" IsEnabled="False">+</Button>
+                <Button Width="24" ToolTip="Remove opcode" IsEnabled="False">-</Button>
+                <Separator/>
+                <Button Width="24" ToolTip="Move up" IsEnabled="False">^</Button>
+                <Button Width="24" ToolTip="Move down" IsEnabled="False">v</Button>
+                <Separator/>
+                <Button x:Name="ExpandTreeButton"
+                        ToolTip="Expand the tree"
+                        IsEnabled="False"
+                        Click="ExpandTreeButton_Click">Expand the tree</Button>
+                <Button x:Name="DisableTreeButton"
+                        ToolTip="Disable tree"
+                        IsEnabled="False"
+                        Click="DisableTreeButton_Click">Disable tree</Button>
+                <Separator/>
+                <Button Width="24" ToolTip="Undo" IsEnabled="False">U</Button>
+                <Button Width="24" ToolTip="Redo" IsEnabled="False">R</Button>
+            </ToolBar>
+            <Grid>
+                <ListView x:Name="OpcodeList"
+                          Visibility="Visible"
+                          SelectionChanged="OpcodeList_SelectionChanged"
+                          MouseDoubleClick="OpcodeList_MouseDoubleClick"
+                          KeyDown="OpcodeList_KeyDown">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Offset" DisplayMemberBinding="{Binding OffsetHex}" Width="70"/>
+                            <GridViewColumn Header="Opcode" DisplayMemberBinding="{Binding Name}" Width="100"/>
+                            <GridViewColumn Header="Id" DisplayMemberBinding="{Binding IdHex}" Width="55"/>
+                            <GridViewColumn Header="Size" DisplayMemberBinding="{Binding SizeLabel}" Width="70"/>
+                            <GridViewColumn Header="Arguments" DisplayMemberBinding="{Binding Arguments}" Width="220"/>
+                            <GridViewColumn Header="Warning" DisplayMemberBinding="{Binding Warning}" Width="180"/>
+                            <GridViewColumn Header="Raw bytes" DisplayMemberBinding="{Binding RawBytesHex}" Width="260"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+                <TreeView x:Name="OpcodeTree"
+                          Visibility="Collapsed"
+                          SelectedItemChanged="OpcodeTree_SelectedItemChanged"
+                          MouseDoubleClick="OpcodeTree_MouseDoubleClick"
+                          KeyDown="OpcodeTree_KeyDown">
+                    <TreeView.ItemTemplate>
+                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                            <TextBlock Text="{Binding Text}" TextTrimming="CharacterEllipsis"/>
+                        </HierarchicalDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+                <Border x:Name="WorkspacePlaceholder"
+                        BorderBrush="#D6D6D6" BorderThickness="1" Background="#FAFAFA"
+                        IsHitTestVisible="False">
+                    <TextBlock x:Name="WorkspaceLabel"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="#777" TextAlignment="Center"
+                               Text="Open an archive and select a field to inspect scripts."/>
+                </Border>
+            </Grid>
+        </DockPanel>
+    </Grid>
+</UserControl>

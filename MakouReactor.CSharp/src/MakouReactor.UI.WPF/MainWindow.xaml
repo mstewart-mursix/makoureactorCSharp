@@ -1,0 +1,167 @@
+<Window x:Class="MakouReactor.UI.WPF.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:archive="clr-namespace:MakouReactor.UI.WPF.Archive"
+        xmlns:fields="clr-namespace:MakouReactor.UI.WPF.Fields"
+        xmlns:preview="clr-namespace:MakouReactor.UI.WPF.Preview"
+        xmlns:shell="clr-namespace:MakouReactor.UI.WPF.Shell"
+        xmlns:scripts="clr-namespace:MakouReactor.UI.WPF.Scripts"
+        Title="Makou Reactor"
+        Width="1280" Height="900" MinWidth="900" MinHeight="650"
+        WindowStartupLocation="CenterScreen"
+        Closing="Window_Closing">
+    <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem x:Name="FileMenuItem" Header="_File">
+                <MenuItem Header="_Open..." Command="{x:Static shell:ShellCommands.OpenFile}"/>
+                <MenuItem Header="Open _Directory..." Command="{x:Static shell:ShellCommands.OpenDirectory}"/>
+                <MenuItem Header="_Recent files" x:Name="RecentFilesMenu" IsEnabled="False"/>
+                <Separator/>
+                <MenuItem Header="_Save" x:Name="SaveMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.Save}"/>
+                <MenuItem Header="Save _As..." x:Name="SaveAsMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.SaveAs}"/>
+                <MenuItem Header="_Export the current map..." x:Name="ExportCurrentMapMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.ExportCurrentMap}"/>
+                <MenuItem Header="Expor_t map into chunks..." x:Name="ExportChunksMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.ExportChunks}"/>
+                <MenuItem Header="_Mass Export..." x:Name="MassExportMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.MassExport}"/>
+                <MenuItem Header="_Import to current map..." x:Name="ImportCurrentMapMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.ImportCurrentMap}"/>
+                <Separator/>
+                <MenuItem Header="R_un FF7" x:Name="RunFf7MenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.RunFf7}"/>
+                <Separator/>
+                <MenuItem Header="C_lose" x:Name="CloseArchiveMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.CloseArchive}"/>
+                <MenuItem Header="E_xit" Command="{x:Static shell:ShellCommands.Exit}"/>
+            </MenuItem>
+
+            <MenuItem x:Name="ToolsMenuItem" Header="T_ools">
+                <MenuItem Header="_Texts..." x:Name="TextsMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenTexts}"/>
+                <MenuItem Header="Map _Models..." x:Name="ModelsMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenModels}"/>
+                <MenuItem Header="Encounte_rs..." x:Name="EncountersMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenEncounters}"/>
+                <MenuItem Header="Mu_sics/Tutorials..." x:Name="TutorialsMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenTutorials}"/>
+                <MenuItem Header="_Walkmesh..." x:Name="WalkmeshMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenWalkmesh}"/>
+                <MenuItem Header="_Background..." x:Name="BackgroundMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenBackground}"/>
+                <MenuItem Header="M_iscellaneous..." x:Name="MiscMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenMiscellaneous}"/>
+                <MenuItem Header="PlayStation _Sections..." x:Name="PlayStationSectionsMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenPlayStationSections}"/>
+                <Separator/>
+                <MenuItem Header="Variable Mana_ger..." x:Name="VariableManagerMenuItem" Command="{x:Static shell:ShellCommands.OpenVariableManager}"/>
+                <MenuItem Header="_Find..." x:Name="FindMenuItem" Command="{x:Static shell:ShellCommands.OpenFind}"/>
+                <MenuItem Header="B_atch processing..." x:Name="BatchMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenBatchProcessing}"/>
+                <Separator/>
+                <MenuItem Header="LLM _Generate..." x:Name="LlmGenerateMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenLlmGenerator}"/>
+                <MenuItem Header="Re_vert LLM Apply" x:Name="RevertLlmApplyMenuItem" IsEnabled="False" Command="{x:Static shell:ShellCommands.RevertLlmApply}"/>
+            </MenuItem>
+
+            <MenuItem x:Name="SettingsMenuItem" Header="_Settings">
+                <MenuItem Header="_Japanese Characters" x:Name="JapaneseTextMenuItem" IsCheckable="True" Command="{x:Static shell:ShellCommands.ToggleJapaneseCharacters}"/>
+                <MenuItem x:Name="LanguageMenuItem" Header="_Language">
+                    <MenuItem x:Name="EnglishLanguageMenuItem" Header="English (default)" IsCheckable="True" IsChecked="True" Tag="en" Click="LanguageMenuItem_Click"/>
+                    <MenuItem x:Name="FrenchLanguageMenuItem" Header="French" IsCheckable="True" Tag="fr" Click="LanguageMenuItem_Click"/>
+                    <MenuItem x:Name="JapaneseLanguageMenuItem" Header="Japanese" IsCheckable="True" Tag="ja" Click="LanguageMenuItem_Click"/>
+                </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="ConfigurationMenuItem" Header="_Configuration..." Command="{x:Static shell:ShellCommands.OpenConfiguration}"/>
+            </MenuItem>
+
+            <MenuItem x:Name="ViewMenuItem" Header="_View">
+                <MenuItem Header="Field List" x:Name="FieldListViewMenuItem" IsCheckable="True" IsChecked="True" Command="{x:Static shell:ShellCommands.ToggleFieldList}"/>
+                <MenuItem Header="Background Preview" x:Name="BackgroundPreviewMenuItem" IsCheckable="True" IsChecked="True" Command="{x:Static shell:ShellCommands.TogglePreview}"/>
+                <Separator/>
+                <MenuItem x:Name="PreviewModeMenuItem" Header="Preview Mode">
+                    <MenuItem Header="Background" x:Name="BackgroundPreviewModeMenuItem" IsCheckable="True" IsChecked="True" Command="{x:Static shell:ShellCommands.SetBackgroundPreviewMode}"/>
+                    <MenuItem Header="Model" x:Name="ModelPreviewModeMenuItem" IsCheckable="True" Command="{x:Static shell:ShellCommands.SetModelPreviewMode}"/>
+                </MenuItem>
+            </MenuItem>
+
+            <MenuItem x:Name="HelpMenuItem" Header="_?" Command="{x:Static shell:ShellCommands.About}"/>
+        </Menu>
+
+        <ToolBarTray DockPanel.Dock="Top">
+            <ToolBar Band="0" BandIndex="0">
+                <Button ToolTip="Open a file" Width="24" Height="24" x:Name="OpenToolButton" Command="{x:Static shell:ShellCommands.OpenFile}">O</Button>
+                <Button ToolTip="Save" Width="24" Height="24" x:Name="SaveToolButton" IsEnabled="False" Command="{x:Static shell:ShellCommands.Save}">S</Button>
+                <Separator/>
+                <Button ToolTip="Find" Width="24" Height="24" x:Name="FindToolButton" Command="{x:Static shell:ShellCommands.OpenFind}">F</Button>
+                <Button ToolTip="Run FF7" Width="24" Height="24" x:Name="RunFf7ToolButton" IsEnabled="False" Command="{x:Static shell:ShellCommands.RunFf7}">R</Button>
+                <Separator/>
+                <Button ToolTip="Text editor" Width="24" Height="24" x:Name="TextsToolButton" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenTexts}">T</Button>
+                <Button ToolTip="Model loader editor" Width="24" Height="24" x:Name="ModelsToolButton" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenModels}">M</Button>
+                <Button ToolTip="Walkmesh editor" Width="24" Height="24" x:Name="WalkmeshToolButton" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenWalkmesh}">W</Button>
+                <Separator/>
+                <Button ToolTip="Generate scene via LLM" Width="32" Height="24" x:Name="LlmGenerateToolButton" IsEnabled="False" Command="{x:Static shell:ShellCommands.OpenLlmGenerator}">AI</Button>
+                <Button ToolTip="Revert last LLM apply" Width="24" Height="24" x:Name="RevertLlmApplyToolButton" IsEnabled="False" Command="{x:Static shell:ShellCommands.RevertLlmApply}">Z</Button>
+                <Separator/>
+                <TabControl x:Name="HeaderTabControl" Width="240" Height="28" SelectionChanged="HeaderTabControl_SelectionChanged">
+                    <TabItem Header="Field Scripts"/>
+                    <TabItem Header="Archive Manager"/>
+                </TabControl>
+                <TextBlock x:Name="ArchiveLabel" Margin="8,0,0,0" MinWidth="112" VerticalAlignment="Center" Foreground="#666" Text="No archive open"/>
+            </ToolBar>
+        </ToolBarTray>
+
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusLabel" Text="Ready"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="LeftPanelColumn" Width="220"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Grid x:Name="LeftPanel" Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="FieldListRow" Height="3*"/>
+                    <RowDefinition x:Name="PreviewSplitterRow" Height="5"/>
+                    <RowDefinition x:Name="PreviewRow" Height="1.6*"/>
+                </Grid.RowDefinitions>
+
+                <fields:FieldListView x:Name="FieldListView" Grid.Row="0" Margin="8,8,4,4"/>
+
+                <GridSplitter x:Name="PreviewGridSplitter" Grid.Row="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+
+                <preview:PreviewPanel x:Name="PreviewPanel"
+                                      Grid.Row="2"
+                                      Margin="8,4,4,8"
+                                      ToolTip="Open background manager"
+                                      MouseLeftButtonDown="PreviewPanel_MouseLeftButtonDown"/>
+            </Grid>
+
+            <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+
+            <TabControl x:Name="MainTabControl" Grid.Column="2" Margin="4,8,8,8" SelectionChanged="MainTabControl_SelectionChanged">
+                <TabControl.ItemContainerStyle>
+                    <Style TargetType="TabItem">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                    </Style>
+                </TabControl.ItemContainerStyle>
+                <TabItem Header="Field Scripts">
+                    <scripts:ScriptManagerView x:Name="ScriptManagerView"/>
+                </TabItem>
+
+                <TabItem Header="Archive Manager">
+                    <archive:ArchiveManagerView x:Name="ArchiveManagerView"/>
+                </TabItem>
+            </TabControl>
+            <Border x:Name="BusyOverlay"
+                    Grid.ColumnSpan="3"
+                    Panel.ZIndex="20"
+                    Background="#99000000"
+                    Visibility="Collapsed">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="340">
+                    <TextBlock x:Name="BusyText"
+                               Margin="0,0,0,10"
+                               Foreground="White"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"/>
+                    <ProgressBar Height="18" IsIndeterminate="True"/>
+                    <Button x:Name="BusyCancelButton"
+                            Width="86"
+                            Height="26"
+                            Margin="0,12,0,0"
+                            HorizontalAlignment="Center"
+                            Click="BusyCancelButton_Click">Cancel</Button>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -1,0 +1,15 @@
+{
+  "meta": { "title": "Bad Types", "model": "llama3", "version": "1.0" },
+  "events": [
+    {
+      "id": "e1",
+      "trigger": "auto",
+      "steps": [
+        { "type": "wait", "ms": 100 },
+        { "type": "wait", "ms": 200 },
+        { "type": "wait", "ms": "not_a_number" }
+      ]
+    }
+  ]
+}
+

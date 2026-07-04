@@ -1,0 +1,54 @@
+<UserControl x:Class="MakouReactor.UI.WPF.Fields.FieldListView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DockPanel>
+        <ToolBar DockPanel.Dock="Top" Height="30">
+            <Button x:Name="CreateFieldButton" Width="24" ToolTip="Create field" IsEnabled="False" Click="CreateFieldButton_Click">+</Button>
+            <Button x:Name="DeleteFieldButton" Width="24" ToolTip="Delete field" IsEnabled="False" Click="DeleteFieldButton_Click">-</Button>
+        </ToolBar>
+        <TextBox DockPanel.Dock="Bottom"
+                 x:Name="SearchBox"
+                 Height="22"
+                 Margin="0,4,0,0"
+                 Text="Search..."
+                 GotFocus="SearchBox_GotFocus"
+                 TextChanged="SearchBox_TextChanged"/>
+        <ListView x:Name="List"
+                  SelectionChanged="List_SelectionChanged"
+                  PreviewMouseRightButtonDown="List_PreviewMouseRightButtonDown">
+            <ListView.ContextMenu>
+                <ContextMenu Opened="ContextMenu_Opened">
+                    <MenuItem x:Name="OpenFieldContextMenuItem"
+                              Header="_Open / Select"
+                              Click="OpenFieldContextMenuItem_Click"/>
+                    <Separator/>
+                    <MenuItem x:Name="CreateFieldContextMenuItem" Header="_Create field" IsEnabled="False" Click="CreateFieldContextMenuItem_Click"/>
+                    <MenuItem x:Name="DeleteFieldContextMenuItem" Header="_Delete field" IsEnabled="False" Click="DeleteFieldContextMenuItem_Click"/>
+                    <MenuItem x:Name="RenameFieldContextMenuItem" Header="_Rename field" IsEnabled="False" Click="RenameFieldContextMenuItem_Click"/>
+                    <Separator/>
+                    <MenuItem x:Name="ImportFieldContextMenuItem"
+                              Header="_Import to this field..."
+                              Click="ImportFieldContextMenuItem_Click"/>
+                    <MenuItem x:Name="ExportFieldContextMenuItem"
+                              Header="_Export this field..."
+                              Click="ExportFieldContextMenuItem_Click"/>
+                </ContextMenu>
+            </ListView.ContextMenu>
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn DisplayMemberBinding="{Binding Name}" Width="120">
+                        <GridViewColumn.Header>
+                            <GridViewColumnHeader Content="File" Tag="Name" Click="ColumnHeader_Click"/>
+                        </GridViewColumn.Header>
+                    </GridViewColumn>
+                    <GridViewColumn DisplayMemberBinding="{Binding Id}" Width="70">
+                        <GridViewColumn.Header>
+                            <GridViewColumnHeader Content="Id" Tag="Id" Click="ColumnHeader_Click"/>
+                        </GridViewColumn.Header>
+                    </GridViewColumn>
+                    <GridViewColumn Header="Status" DisplayMemberBinding="{Binding Status}" Width="90"/>
+                </GridView>
+            </ListView.View>
+        </ListView>
+    </DockPanel>
+</UserControl>

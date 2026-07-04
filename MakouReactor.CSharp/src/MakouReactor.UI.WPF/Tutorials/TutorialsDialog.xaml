@@ -1,0 +1,77 @@
+<Window x:Class="MakouReactor.UI.WPF.Tutorials.TutorialsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Musics/Tutorials" Height="560" Width="860"
+        WindowStartupLocation="CenterOwner"
+        MinHeight="400" MinWidth="640">
+    <DockPanel>
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusLabel" Text="Ready"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <ToolBar DockPanel.Dock="Top" Height="30">
+            <CheckBox x:Name="MusicFilterCheckBox" Margin="4,0" Content="Music" IsChecked="{Binding ShowMusic, Mode=TwoWay}"/>
+            <CheckBox x:Name="TutorialFilterCheckBox" Margin="4,0" Content="Tutorials" IsChecked="{Binding ShowTutorials, Mode=TwoWay}"/>
+            <Separator/>
+            <Button ToolTip="Add" IsEnabled="False">+</Button>
+            <Button ToolTip="Remove" IsEnabled="False">-</Button>
+            <Separator/>
+            <Button x:Name="ExportEntryButton"
+                    ToolTip="Export selected tutorial/music entry"
+                    IsEnabled="{Binding HasSelectedEntry}"
+                    Click="ExportEntry_Click">Export...</Button>
+            <Button ToolTip="Import" IsEnabled="False">Import...</Button>
+            <Separator/>
+            <TextBlock x:Name="FieldLabel" VerticalAlignment="Center" Foreground="#555" Text="{Binding FieldName}"/>
+        </ToolBar>
+
+        <Grid Margin="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="230"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <ListView x:Name="EntryListView"
+                      ItemsSource="{Binding Entries}"
+                      SelectedItem="{Binding SelectedEntry, Mode=TwoWay}">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="#" DisplayMemberBinding="{Binding Id}" Width="40"/>
+                        <GridViewColumn Header="Type" DisplayMemberBinding="{Binding Kind}" Width="70"/>
+                        <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="88"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+
+            <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"/>
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <UniformGrid Columns="4" Margin="0,0,0,6">
+                    <TextBlock x:Name="KindLabel" Text="{Binding KindText}"/>
+                    <TextBlock x:Name="SizeLabel" Text="{Binding SizeText}"/>
+                    <TextBlock x:Name="MusicIdLabel" Text="{Binding MusicIdText}"/>
+                    <TextBlock x:Name="BrokenLabel" Text="{Binding BrokenText}"/>
+                </UniformGrid>
+
+                <TextBox x:Name="DescriptionBox"
+                         Grid.Row="1"
+                         FontFamily="Consolas"
+                         FontSize="12"
+                         IsReadOnly="True"
+                         Text="{Binding DescriptionText}"
+                         TextWrapping="NoWrap"
+                         AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Auto"/>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>

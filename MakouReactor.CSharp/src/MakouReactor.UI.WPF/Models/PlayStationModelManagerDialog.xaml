@@ -1,0 +1,109 @@
+<Window x:Class="MakouReactor.UI.WPF.Models.PlayStationModelManagerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PlayStation Field Models"
+        Height="460"
+        Width="760"
+        MinHeight="360"
+        MinWidth="640"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel>
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusLabel" Text="Ready"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <ToolBar DockPanel.Dock="Top" Height="30">
+            <TextBlock x:Name="FieldLabel" VerticalAlignment="Center" Foreground="#555" Text="{Binding FieldName}"/>
+            <Separator/>
+            <Button x:Name="ApplyModelLoaderButton"
+                    ToolTip="Apply edited model-loader records to the PlayStation DAT ModelLoader section"
+                    IsEnabled="{Binding IsModified, FallbackValue=False, TargetNullValue=False}"
+                    Click="ApplyModelLoader_Click">Apply</Button>
+            <Separator/>
+            <TextBlock VerticalAlignment="Center" Text="Animation"/>
+            <ComboBox x:Name="AnimationComboBox"
+                      Width="64"
+                      ItemsSource="{Binding AvailableAnimationIndices}"
+                      SelectedItem="{Binding SelectedAnimationIndex, Mode=TwoWay}"
+                      IsEnabled="{Binding CanExportAnimation, FallbackValue=False, TargetNullValue=False}"/>
+            <Button x:Name="ExportAnimationButton"
+                    ToolTip="{Binding AnimationExportStatusText}"
+                    IsEnabled="{Binding CanExportAnimation, FallbackValue=False, TargetNullValue=False}"
+                    Click="ExportAnimation_Click">Export animation...</Button>
+        </ToolBar>
+
+        <Grid Margin="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <ListView x:Name="ModelListView"
+                      ItemsSource="{Binding Models}"
+                      SelectedItem="{Binding SelectedModel, Mode=TwoWay}">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="Id" DisplayMemberBinding="{Binding Id}" Width="44"/>
+                        <GridViewColumn Header="Model" DisplayMemberBinding="{Binding ModelId}" Width="64"/>
+                        <GridViewColumn Header="Animations" DisplayMemberBinding="{Binding AnimationCount}" Width="88"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+
+            <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"/>
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="70"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="70"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="70"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,4,4" VerticalAlignment="Center" Text="Model"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,12,4" Text="{Binding SelectedModel.ModelId, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Margin="0,0,4,4" VerticalAlignment="Center" Text="Face"/>
+                    <TextBox Grid.Row="0" Grid.Column="3" Margin="0,0,12,4" Text="{Binding SelectedModel.FaceId, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="0" Grid.Column="4" Margin="0,0,4,4" VerticalAlignment="Center" Text="Animations"/>
+                    <TextBox Grid.Row="0" Grid.Column="5" Margin="0,0,0,4" Text="{Binding SelectedModel.AnimationCount, UpdateSourceTrigger=PropertyChanged}"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,4,4" VerticalAlignment="Center" Text="Bones"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,12,4" Text="{Binding SelectedModel.BonesCount, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Margin="0,0,4,4" VerticalAlignment="Center" Text="Parts"/>
+                    <TextBox Grid.Row="1" Grid.Column="3" Margin="0,0,12,4" Text="{Binding SelectedModel.PartsCount, UpdateSourceTrigger=PropertyChanged}"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,0,4,0" VerticalAlignment="Center" Text="Unknown 1"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,12,0" Text="{Binding SelectedModel.Unknown1, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="2" Margin="0,0,4,0" VerticalAlignment="Center" Text="Unknown 2"/>
+                    <TextBox Grid.Row="2" Grid.Column="3" Margin="0,0,12,0" Text="{Binding SelectedModel.Unknown2, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="4" Margin="0,0,4,0" VerticalAlignment="Center" Text="Unknown 3"/>
+                    <TextBox Grid.Row="2" Grid.Column="5" Text="{Binding SelectedModel.Unknown3, UpdateSourceTrigger=PropertyChanged}"/>
+                </Grid>
+
+                <Border Grid.Row="1" Background="#1F1F1F" BorderBrush="#333" BorderThickness="1">
+                    <TextBlock x:Name="PreviewLabel"
+                               Foreground="#DADADA"
+                               Margin="12"
+                               TextWrapping="Wrap"
+                               Text="{Binding PreviewText}"/>
+                </Border>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>

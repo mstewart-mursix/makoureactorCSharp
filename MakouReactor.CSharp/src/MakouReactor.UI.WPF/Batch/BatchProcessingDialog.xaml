@@ -1,0 +1,33 @@
+<Window x:Class="MakouReactor.UI.WPF.Batch.BatchProcessingDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Batch processing" Height="420" Width="560"
+        WindowStartupLocation="CenterOwner"
+        MinHeight="340" MinWidth="460">
+    <DockPanel>
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusLabel" Text="Select one or more available batch operations."/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <DockPanel DockPanel.Dock="Bottom" Margin="8">
+            <Button DockPanel.Dock="Right" Width="86" Margin="6,0,0,0" IsCancel="True">Cancel</Button>
+            <Button x:Name="ApplyButton" DockPanel.Dock="Right" Width="86" IsEnabled="False" Click="Apply_Click">Apply</Button>
+        </DockPanel>
+
+        <ScrollViewer Margin="10" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <CheckBox x:Name="CleanUnusedTextsCheckBox" Content="Clean all unused texts" Margin="0,0,0,8" Checked="Operation_Checked" Unchecked="Operation_Checked"/>
+                <CheckBox x:Name="EmptyTextsCheckBox" Content="Disable all texts in the game" Margin="0,0,0,8" Checked="Operation_Checked" Unchecked="Operation_Checked"/>
+                <CheckBox x:Name="AutosizeTextWindowsCheckBox" Content="Autosize all text windows in the game" Margin="0,0,0,8" Checked="Operation_Checked" Unchecked="Operation_Checked"/>
+                <CheckBox x:Name="DisableBattlesCheckBox" Content="Disable all battles in the game" Margin="0,0,0,8" Checked="Operation_Checked" Unchecked="Operation_Checked"/>
+                <Separator Margin="0,4,0,10"/>
+                <CheckBox x:Name="CleanModelLoaderCheckBox" Content="Clean unused data in field model loaders" Margin="0,0,0,8" Checked="Operation_Checked" Unchecked="Operation_Checked"/>
+                <CheckBox x:Name="RemoveUnusedBackgroundCheckBox" Content="Clean unused data for field backgrounds" Margin="0,0,0,8" Checked="Operation_Checked" Unchecked="Operation_Checked"/>
+                <CheckBox x:Name="RepairBackgroundsCheckBox" Content="Repair broken backgrounds (lastmap, fr_e)" Margin="0,0,0,8" Checked="Operation_Checked" Unchecked="Operation_Checked"/>
+                <CheckBox x:Name="ResizeBackgroundsCheckBox" Content="Resize backgrounds to 16/9 ratio" Margin="0,0,0,8" Checked="Operation_Checked" Unchecked="Operation_Checked"/>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

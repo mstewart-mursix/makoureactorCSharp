@@ -451,3 +451,9 @@ compile_commands.json
 .build
 .install
 .DS_Store
+llm.config.json
+.tmp_build_output.txt
+CompileAttempt.txt
+test.txt
+makoureactor-2.2.0-win64/
+zlib-1.3.1/

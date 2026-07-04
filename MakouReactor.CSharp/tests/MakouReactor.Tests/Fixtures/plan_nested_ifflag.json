@@ -1,0 +1,38 @@
+{
+  "meta": { "title": "Nested IfFlag Scene", "model": "test", "version": "1.0" },
+  "actors": [
+    { "id": "cloud", "position": {"x": 10, "y": 10} }
+  ],
+  "events": [
+    {
+      "id": "conditional_event",
+      "trigger": "auto",
+      "steps": [
+        {
+          "type": "if_flag",
+          "key": "has_key",
+          "then": [
+            { "type": "say", "actorId": "cloud", "text": "I have the key." },
+            {
+              "type": "if_flag",
+              "key": "door_unlocked",
+              "then": [
+                { "type": "say", "actorId": "cloud", "text": "Door is open." }
+              ],
+              "else": [
+                { "type": "say", "actorId": "cloud", "text": "Door is locked." }
+              ]
+            }
+          ],
+          "else": [
+            { "type": "say", "actorId": "cloud", "text": "I need the key." }
+          ]
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "spawnPoint": { "x": 10, "y": 10 },
+    "props": []
+  }
+}

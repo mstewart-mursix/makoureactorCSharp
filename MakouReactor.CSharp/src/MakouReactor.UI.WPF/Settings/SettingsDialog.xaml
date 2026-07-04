@@ -1,0 +1,111 @@
+<Window x:Class="MakouReactor.UI.WPF.Settings.SettingsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Configuration" Height="520" Width="720"
+        WindowStartupLocation="CenterOwner"
+        MinHeight="420" MinWidth="620">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="8">
+            <Button Width="86" Margin="0,0,6,0" IsDefault="True" Click="Ok_Click">OK</Button>
+            <Button Width="86" IsCancel="True">Cancel</Button>
+        </StackPanel>
+
+        <TabControl Margin="8">
+            <TabItem Header="FF7">
+                <Grid Margin="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="145"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="90"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,4,8,8" VerticalAlignment="Center" Text="Executable path"/>
+                    <TextBox x:Name="Ff7ExecutableBox" Grid.Row="0" Grid.Column="1" Margin="0,0,6,8"/>
+                    <Button Grid.Row="0" Grid.Column="2" Margin="0,0,0,8" Click="BrowseFf7Executable_Click">Browse...</Button>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,4,8,8" VerticalAlignment="Center" Text="Data path"/>
+                    <TextBox x:Name="Ff7DataPathBox" Grid.Row="1" Grid.Column="1" Margin="0,0,6,8"/>
+
+                    <TextBlock Grid.Row="2" Grid.ColumnSpan="3" Foreground="#666" TextWrapping="Wrap"
+                               Text="Run FF7 uses the configured executable. Data path is stored for future import/export and preview workflows."/>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Editor">
+                <StackPanel Margin="10">
+                    <CheckBox x:Name="JapaneseTextCheckBox" Margin="0,0,0,8" Content="Japanese Characters"/>
+                    <CheckBox x:Name="FieldListCheckBox" Margin="0,0,0,8" Content="Show Field List"/>
+                    <CheckBox x:Name="PreviewCheckBox" Margin="0,0,0,8" Content="Show Background Preview"/>
+                    <TextBlock Margin="0,10,0,4" Text="Preview mode"/>
+                    <ComboBox x:Name="PreviewModeComboBox" Width="220" HorizontalAlignment="Left">
+                        <ComboBoxItem Content="Background" Tag="Background"/>
+                        <ComboBoxItem Content="Model" Tag="Model"/>
+                    </ComboBox>
+                    <TextBlock Margin="0,10,0,4" Text="Language"/>
+                    <ComboBox x:Name="LanguageComboBox" Width="220" HorizontalAlignment="Left">
+                        <ComboBoxItem Content="English (default)" Tag="en"/>
+                        <ComboBoxItem Content="French" Tag="fr"/>
+                        <ComboBoxItem Content="Japanese" Tag="ja"/>
+                    </ComboBox>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="LLM">
+                <Grid Margin="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="145"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,4,8,8" Text="Backend"/>
+                    <ComboBox x:Name="BackendComboBox" Grid.Row="0" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,8">
+                        <ComboBoxItem Content="codex"/>
+                        <ComboBoxItem Content="http"/>
+                    </ComboBox>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,4,8,8" Text="Codex executable"/>
+                    <TextBox x:Name="CodexExecutableBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,4,8,8" Text="Codex model"/>
+                    <TextBox x:Name="CodexModelBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8"/>
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,4,8,8" Text="Timeout ms"/>
+                    <TextBox x:Name="TimeoutBox" Grid.Row="3" Grid.Column="1" Width="120" HorizontalAlignment="Left" Margin="0,0,0,8"/>
+
+                    <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,4,8,8" Text="HTTP endpoint"/>
+                    <TextBox x:Name="EndpointBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,8"/>
+
+                    <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,4,8,8" Text="HTTP model"/>
+                    <TextBox x:Name="ModelBox" Grid.Row="5" Grid.Column="1" Margin="0,0,0,8"/>
+
+                    <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,4,8,8" Text="Repair attempts"/>
+                    <TextBox x:Name="RepairAttemptsBox" Grid.Row="6" Grid.Column="1" Width="120" HorizontalAlignment="Left" Margin="0,0,0,8"/>
+
+                    <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,4,8,8" Text="HTTP API key"/>
+                    <TextBox x:Name="ApiKeyBox" Grid.Row="7" Grid.Column="1" Margin="0,0,0,8"/>
+
+                    <StackPanel Grid.Row="8" Grid.Column="1" Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button Width="112" Click="DoctorLlmSettings_Click">Test/Doctor</Button>
+                        <TextBlock x:Name="LlmDoctorStatusText" Margin="12,4,0,0" Foreground="#666"/>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

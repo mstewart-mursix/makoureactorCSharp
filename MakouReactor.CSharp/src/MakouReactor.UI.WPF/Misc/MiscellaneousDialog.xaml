@@ -1,0 +1,131 @@
+<Window x:Class="MakouReactor.UI.WPF.Misc.MiscellaneousDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Miscellaneous" Height="620" Width="900"
+        WindowStartupLocation="CenterOwner"
+        MinHeight="440" MinWidth="700">
+    <DockPanel>
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusLabel" Text="Ready"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <ToolBar DockPanel.Dock="Top" Height="30">
+            <TextBlock x:Name="FieldLabel" VerticalAlignment="Center" Foreground="#555" Text="{Binding FieldName}"/>
+            <Separator/>
+            <Button x:Name="ApplyMiscButton"
+                    ToolTip="Apply INF metadata changes to the current field"
+                    IsEnabled="{Binding IsModified, FallbackValue=False, TargetNullValue=False}"
+                    Click="ApplyMisc_Click">Apply</Button>
+            <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Foreground="#A33" Text="{Binding ValidationMessage}"/>
+        </ToolBar>
+
+        <TabControl Margin="6">
+            <TabItem Header="General">
+                <Grid Margin="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="Field name:" VerticalAlignment="Center"/>
+                    <TextBox x:Name="MapNameBox" Grid.Column="1" Margin="0,0,0,6" Text="{Binding MapName, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="1" Text="Author:" VerticalAlignment="Center"/>
+                    <TextBox x:Name="AuthorBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,6" IsReadOnly="True" Text="{Binding Author}"/>
+                    <TextBlock Grid.Row="2" Text="Control:" VerticalAlignment="Center"/>
+                    <TextBox x:Name="ControlBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,6" Text="{Binding Control, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="3" Text="Camera focus height:" VerticalAlignment="Center"/>
+                    <TextBox x:Name="CameraFocusBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,6" Text="{Binding CameraFocusHeight, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="4" Text="Camera range:" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal">
+                        <TextBox Width="64" Margin="0,0,4,0" Text="{Binding CameraRangeLeft, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBox Width="64" Margin="0,0,4,0" Text="{Binding CameraRangeTop, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBox Width="64" Margin="0,0,4,0" Text="{Binding CameraRangeRight, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBox Width="64" Text="{Binding CameraRangeBottom, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Background">
+                <Grid Margin="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="180"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Layer flags:"/>
+                    <TextBox x:Name="LayerFlagsBox" Grid.Column="1" Margin="0,0,0,6" IsReadOnly="True"/>
+                    <TextBlock Grid.Row="1" Text="Layer 3 size:"/>
+                    <TextBox x:Name="Layer3SizeBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,6" IsReadOnly="True"/>
+                    <TextBlock Grid.Row="2" Text="Layer 4 size:"/>
+                    <TextBox x:Name="Layer4SizeBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,6" IsReadOnly="True"/>
+                    <TextBlock Grid.Row="3" Text="Layer 3 offset:"/>
+                    <TextBox x:Name="Layer3OffsetBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,6" IsReadOnly="True"/>
+                    <TextBlock Grid.Row="4" Text="Layer 4 offset:"/>
+                    <TextBox x:Name="Layer4OffsetBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,6" IsReadOnly="True"/>
+                    <TextBlock Grid.Row="5" Text="Multipliers:"/>
+                    <TextBox x:Name="LayerMultiplierBox" Grid.Row="5" Grid.Column="1" IsReadOnly="True"/>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Exits">
+                <ListView x:Name="ExitListView" Margin="6" ItemsSource="{Binding Inf.ExitLines}">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="#" DisplayMemberBinding="{Binding Id}" Width="42"/>
+                            <GridViewColumn Header="Line A" DisplayMemberBinding="{Binding LineA.Display}" Width="120"/>
+                            <GridViewColumn Header="Line B" DisplayMemberBinding="{Binding LineB.Display}" Width="120"/>
+                            <GridViewColumn Header="Destination" DisplayMemberBinding="{Binding Destination.Display}" Width="120"/>
+                            <GridViewColumn Header="Field" DisplayMemberBinding="{Binding FieldId}" Width="70"/>
+                            <GridViewColumn Header="Dir" DisplayMemberBinding="{Binding Direction}" Width="50"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </TabItem>
+
+            <TabItem Header="Triggers">
+                <ListView x:Name="TriggerListView" Margin="6" ItemsSource="{Binding Inf.Triggers}">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="#" DisplayMemberBinding="{Binding Id}" Width="42"/>
+                            <GridViewColumn Header="Line A" DisplayMemberBinding="{Binding LineA.Display}" Width="120"/>
+                            <GridViewColumn Header="Line B" DisplayMemberBinding="{Binding LineB.Display}" Width="120"/>
+                            <GridViewColumn Header="Param" DisplayMemberBinding="{Binding BackgroundParameter}" Width="60"/>
+                            <GridViewColumn Header="State" DisplayMemberBinding="{Binding BackgroundState}" Width="60"/>
+                            <GridViewColumn Header="Behavior" DisplayMemberBinding="{Binding Behavior}" Width="70"/>
+                            <GridViewColumn Header="Sound" DisplayMemberBinding="{Binding SoundId}" Width="60"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </TabItem>
+
+            <TabItem Header="Arrows">
+                <ListView x:Name="ArrowListView" Margin="6" ItemsSource="{Binding Inf.Arrows}">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="#" DisplayMemberBinding="{Binding Id}" Width="42"/>
+                            <GridViewColumn Header="Displayed" DisplayMemberBinding="{Binding Displayed}" Width="80"/>
+                            <GridViewColumn Header="Position" DisplayMemberBinding="{Binding Position}" Width="160"/>
+                            <GridViewColumn Header="Type" DisplayMemberBinding="{Binding Type}" Width="60"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

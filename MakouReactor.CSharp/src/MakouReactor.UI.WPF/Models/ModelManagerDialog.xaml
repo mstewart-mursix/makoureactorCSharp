@@ -1,0 +1,125 @@
+<Window x:Class="MakouReactor.UI.WPF.Models.ModelManagerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:preview="clr-namespace:MakouReactor.UI.WPF.Preview"
+        Title="Field Models" Height="560" Width="920"
+        WindowStartupLocation="CenterOwner"
+        MinHeight="420" MinWidth="720">
+    <DockPanel>
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusLabel" Text="Ready"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <ToolBar DockPanel.Dock="Top" Height="30">
+            <TextBlock x:Name="FieldLabel" VerticalAlignment="Center" Foreground="#555" Text="{Binding FieldName}"/>
+            <Separator/>
+            <Button x:Name="ApplyModelLoaderButton"
+                    ToolTip="Apply model-loader edits to the current field"
+                    IsEnabled="{Binding IsModified, FallbackValue=False, TargetNullValue=False}"
+                    Click="ApplyModelLoader_Click">Apply</Button>
+        </ToolBar>
+
+        <Grid Margin="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <ListView x:Name="ModelListView"
+                      ItemsSource="{Binding Models}"
+                      SelectedItem="{Binding SelectedModel, Mode=TwoWay}">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="Id" DisplayMemberBinding="{Binding Id}" Width="44"/>
+                        <GridViewColumn Header="HRC" DisplayMemberBinding="{Binding HrcName}" Width="80"/>
+                        <GridViewColumn Header="Name" DisplayMemberBinding="{Binding CharacterName}" Width="120"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+
+            <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"/>
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="150"/>
+                </Grid.RowDefinitions>
+
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="80"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="80"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="80"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="80"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,4,4" VerticalAlignment="Center" Text="Name"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,12,4" Text="{Binding SelectedModel.CharacterName, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Margin="0,0,4,4" VerticalAlignment="Center" Text="HRC"/>
+                    <TextBox Grid.Row="0" Grid.Column="3" Margin="0,0,12,4" Text="{Binding SelectedModel.HrcName, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="0" Grid.Column="4" Margin="0,0,4,4" VerticalAlignment="Center" Text="Unknown"/>
+                    <TextBox Grid.Row="0" Grid.Column="5" Margin="0,0,12,4" Text="{Binding SelectedModel.Unknown, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="0" Grid.Column="6" Margin="0,0,4,4" VerticalAlignment="Center" Text="Scale"/>
+                    <TextBox Grid.Row="0" Grid.Column="7" Margin="0,0,0,4" Text="{Binding SelectedModel.Scale, UpdateSourceTrigger=PropertyChanged}"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,4,0" VerticalAlignment="Center" Text="R"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,12,0" Text="{Binding SelectedModel.GlobalR, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Margin="0,0,4,0" VerticalAlignment="Center" Text="G"/>
+                    <TextBox Grid.Row="1" Grid.Column="3" Margin="0,0,12,0" Text="{Binding SelectedModel.GlobalG, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="4" Margin="0,0,4,0" VerticalAlignment="Center" Text="B"/>
+                    <TextBox Grid.Row="1" Grid.Column="5" Margin="0,0,12,0" Text="{Binding SelectedModel.GlobalB, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="6" Margin="0,0,4,0" VerticalAlignment="Center" Text="Animations"/>
+                    <TextBlock Grid.Row="1" Grid.Column="7" VerticalAlignment="Center" Text="{Binding SelectedModelAnimationCount}"/>
+                </Grid>
+
+                <DockPanel Grid.Row="1">
+                    <ToolBar DockPanel.Dock="Top" Height="30">
+                        <Button x:Name="SelectAnimationButton"
+                                IsEnabled="{Binding CanSelectAnimation}"
+                                Click="SelectAnimationButton_Click"
+                                ToolTip="Open animation selector">Select animation...</Button>
+                    </ToolBar>
+                    <ListView x:Name="AnimationListView"
+                              ItemsSource="{Binding SelectedModel.Animations}"
+                              SelectedItem="{Binding SelectedAnimation, Mode=TwoWay}"
+                              MouseDoubleClick="AnimationListView_MouseDoubleClick"
+                              SelectionChanged="AnimationListView_SelectionChanged">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Id" DisplayMemberBinding="{Binding Id}" Width="44"/>
+                                <GridViewColumn Header="Animation" Width="180">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Width="150" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Unknown" Width="90">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Width="58" Text="{Binding Unknown, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </DockPanel>
+
+                <preview:ModelPreviewControl x:Name="ModelPreview" Grid.Row="2" Margin="0,6,0,0"/>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>
