@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
+using MakouReactor.AI.Layout;
 using MakouReactor.Core.Models;
 
 namespace MakouReactor.AI.Mapping;
@@ -30,15 +31,45 @@ public static class ScenePlanMapper
         var summary = Summarize(plan);
 
         if (opts.PreviewOnly)
-            return new ApplyResult { Ok = true, GroupName = groupName, Summary = summary };
+        {
+            return new ApplyResult
+            {
+                Ok = true,
+                GroupName = groupName,
+                Summary = $"{summary}{Environment.NewLine}{DescribeChanges(plan, field, opts.WalkmeshMode)}",
+            };
+        }
 
         if (field is FieldPC pcField)
         {
+            var walkmesh = opts.WalkmeshMode != WalkmeshMode.Ignore && plan.Layout.Walkmesh is { Regions.Count: > 0 }
+                ? plan.Layout.Walkmesh
+                : null;
+
+            // Validate the walkmesh before touching anything so a bad region cannot leave a half-applied plan.
+            if (walkmesh != null)
+            {
+                foreach (var region in walkmesh.Regions)
+                {
+                    var problem = WalkmeshBuilder.ValidatePolygon(region.Polygon);
+                    if (problem != null)
+                        return ApplyResult.Failure($"Walkmesh region '{region.Id}': {problem}.");
+                }
+            }
+
             var applyResult = ApplyDialogueToPcField(plan, pcField, groupName, summary);
-            if (!applyResult.Ok)
+            if (!applyResult.Ok || walkmesh == null)
                 return applyResult;
 
-            return applyResult;
+            if (pcField.Walkmesh == null)
+                pcField.ReplaceWalkmesh(new IdFile());
+
+            var added = WalkmeshBuilder.Apply(pcField.Walkmesh!, walkmesh, opts.WalkmeshMode);
+            pcField.ApplyWalkmeshChanges();
+            var verb = opts.WalkmeshMode == WalkmeshMode.Replace ? "Replaced the walkmesh with" : "Added";
+            return ApplyResult.Success(
+                groupName,
+                $"{applyResult.Summary}{Environment.NewLine}{verb} {added} walkmesh triangle(s) from {walkmesh.Regions.Count} region(s).");
         }
 
         // Non-PC field support is still being ported; retain the previous
@@ -108,6 +139,68 @@ public static class ScenePlanMapper
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Describe precisely what <see cref="ApplyToField"/> will write to <paramref name="field"/> and what
+    /// stays only in the plan JSON, so the preview never overstates the change.
+    /// </summary>
+    public static string DescribeChanges(ScenePlan plan, Field? field, WalkmeshMode walkmeshMode = WalkmeshMode.Ignore)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Changes to the field:");
+
+        var texts = CollectDialogueTexts(plan).Count();
+        if (field is FieldPC { ScriptsAndTexts: { } section })
+        {
+            if (texts == 0)
+            {
+                sb.AppendLine(" - No dialogue text will be added.");
+            }
+            else
+            {
+                var start = section.TextCount;
+                var end = start + texts - 1;
+                sb.AppendLine($" - Add {texts} dialogue text entr{(texts == 1 ? "y" : "ies")} (texts {start}..{end}).");
+                if (start + texts > Section1File.MaxTextCount)
+                    sb.AppendLine($" ! This exceeds the Section 1 text limit of {Section1File.MaxTextCount}; apply will be refused.");
+            }
+        }
+        else
+        {
+            sb.AppendLine(" - The active field has no parsed Section 1; nothing can be applied.");
+        }
+
+        var steps = plan.Events.SelectMany(static e => FlattenSteps(e.Steps)).Count();
+        var notWritten = new List<string>();
+        if (plan.Actors.Count > 0)
+            notWritten.Add($"{plan.Actors.Count} actor(s)");
+        if (plan.Events.Count > 0)
+            notWritten.Add($"{plan.Events.Count} event(s) with {steps} step(s)");
+        if (plan.Layout.Props.Count > 0)
+            notWritten.Add($"{plan.Layout.Props.Count} prop(s)");
+        if (plan.Layout.Walkmesh is { Regions.Count: > 0 } proposed)
+        {
+            if (walkmeshMode == WalkmeshMode.Ignore)
+            {
+                notWritten.Add($"{proposed.Regions.Count} walkmesh region(s) (walkmesh mode is Ignore)");
+            }
+            else
+            {
+                var triangles = proposed.Regions
+                    .Where(static r => WalkmeshBuilder.ValidatePolygon(r.Polygon) == null)
+                    .Sum(static r => WalkmeshBuilder.Triangulate(r.Polygon).Count);
+                var existing = (field as FieldPC)?.Walkmesh?.TriangleCount ?? 0;
+                sb.AppendLine(walkmeshMode == WalkmeshMode.Replace
+                    ? $" - Replace the walkmesh ({existing} triangle(s)) with {triangles} triangle(s) from {proposed.Regions.Count} region(s)."
+                    : $" - Add {triangles} triangle(s) from {proposed.Regions.Count} region(s) to the walkmesh ({existing} existing).");
+            }
+        }
+
+        if (notWritten.Count > 0)
+            sb.AppendLine($" - Not written to the field (plan JSON only): {string.Join(", ", notWritten)}.");
+
+        return sb.ToString().TrimEnd();
     }
 
     private static ApplyResult ApplyDialogueToPcField(

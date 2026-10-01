@@ -70,6 +70,19 @@ public sealed class ValidationResult
 // Mapper types (maps to ai/ScenePlanMapper.h)
 // ============================================================================
 
+/// <summary>How a proposed walkmesh is combined with the field's existing one.</summary>
+public enum WalkmeshMode
+{
+    /// <summary>Do not touch the field's walkmesh (default, the safe choice).</summary>
+    Ignore,
+
+    /// <summary>Append the proposed triangles to the existing walkmesh.</summary>
+    Merge,
+
+    /// <summary>Replace the existing walkmesh entirely.</summary>
+    Replace,
+}
+
 /// <summary>
 /// Options for applying a scene plan to a field.
 /// Maps to <c>struct ApplyOptions</c> in <c>ai/ScenePlanMapper.h</c>.
@@ -78,6 +91,9 @@ public sealed class ApplyOptions
 {
     public bool PreviewOnly { get; init; } = true;
     public string? GroupNameOverride { get; init; }
+
+    /// <summary>How a proposed walkmesh (schema 1.1) is combined with the field's walkmesh.</summary>
+    public WalkmeshMode WalkmeshMode { get; init; } = WalkmeshMode.Ignore;
 }
 
 /// <summary>

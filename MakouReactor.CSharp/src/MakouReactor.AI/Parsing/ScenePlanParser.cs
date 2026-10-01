@@ -93,6 +93,13 @@ public static class ScenePlanParser
                 SpawnPoint = layoutResult.spawn,
                 WalkmeshHint = layoutResult.walkmeshHint
             };
+
+            if (layoutEl.TryGetProperty("walkmesh", out var walkmeshEl))
+            {
+                var walkmesh = ParseWalkmesh(walkmeshEl);
+                if (!walkmesh.ok) return Result.Failure(walkmesh.err);
+                plan.Layout.Walkmesh = walkmesh.walkmesh;
+            }
         }
 
         return new Result { Ok = true, Plan = plan };
@@ -101,6 +108,21 @@ public static class ScenePlanParser
     // -----------------------------------------------------------------------
     // Type guard helpers
     // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Read a JSON number as int, rounding fractional values (models often emit 12.5) and clamping to the int range.
+    /// </summary>
+    private static int ToInt(JsonElement number)
+    {
+        if (number.TryGetInt32(out var exact))
+            return exact;
+
+        var value = number.GetDouble();
+        if (double.IsNaN(value))
+            return 0;
+
+        return (int)Math.Clamp(Math.Round(value), int.MinValue, int.MaxValue);
+    }
 
     private static string TypeName(JsonElement el) => el.ValueKind switch
     {
@@ -155,7 +177,7 @@ public static class ScenePlanParser
             !v.TryGetProperty("y", out var yEl) || yEl.ValueKind != JsonValueKind.Number)
             return (false, default, ErrorAt(path, "{x:number,y:number}", v));
 
-        return (true, new Point(xEl.GetInt32(), yEl.GetInt32()), string.Empty);
+        return (true, new Point(ToInt(xEl), ToInt(yEl)), string.Empty);
     }
 
     private static (bool ok, Rect rect, string err) ParseRect(JsonElement v, string path)
@@ -169,7 +191,7 @@ public static class ScenePlanParser
             !v.TryGetProperty("h", out var hEl) || hEl.ValueKind != JsonValueKind.Number)
             return (false, default, ErrorAt(path, "{x:number,y:number,w:number,h:number}", v));
 
-        return (true, new Rect(xEl.GetInt32(), yEl.GetInt32(), wEl.GetInt32(), hEl.GetInt32()), string.Empty);
+        return (true, new Rect(ToInt(xEl), ToInt(yEl), ToInt(wEl), ToInt(hEl)), string.Empty);
     }
 
     // -----------------------------------------------------------------------
@@ -369,6 +391,46 @@ public static class ScenePlanParser
         return (true, props, string.Empty, spawnPoint, hint);
     }
 
+    private static (bool ok, WalkmeshPlan walkmesh, string err) ParseWalkmesh(JsonElement el)
+    {
+        var plan = new WalkmeshPlan();
+        if (el.ValueKind != JsonValueKind.Object)
+            return (false, plan, ErrorAt("layout.walkmesh", "object", el));
+
+        if (!el.TryGetProperty("regions", out var regionsEl) || regionsEl.ValueKind != JsonValueKind.Array)
+            return (false, plan, ErrorAt("layout.walkmesh.regions", "array",
+                el.TryGetProperty("regions", out var got) ? got : default));
+
+        var i = 0;
+        foreach (var regionEl in regionsEl.EnumerateArray())
+        {
+            var path = $"layout.walkmesh.regions[{i}]";
+            if (regionEl.ValueKind != JsonValueKind.Object)
+                return (false, plan, ErrorAt(path, "object", regionEl));
+
+            if (!GetString(regionEl, "id", out var id))
+                return (false, plan, ErrorAt($"{path}.id", "string", regionEl.GetPropertyOrNull("id")));
+
+            if (!GetArray(regionEl, "polygon", out var polygonEl))
+                return (false, plan, ErrorAt($"{path}.polygon", "array", regionEl.GetPropertyOrNull("polygon")));
+
+            var region = new WalkmeshRegion { Id = id };
+            var j = 0;
+            foreach (var pointEl in polygonEl.EnumerateArray())
+            {
+                var pt = ParsePoint(pointEl, $"{path}.polygon[{j}]");
+                if (!pt.ok) return (false, plan, pt.err);
+                region.Polygon.Add(pt.point);
+                j++;
+            }
+
+            plan.Regions.Add(region);
+            i++;
+        }
+
+        return (true, plan, string.Empty);
+    }
+
     // -----------------------------------------------------------------------
     // Step parsing
     // -----------------------------------------------------------------------
@@ -460,7 +522,7 @@ public static class ScenePlanParser
         var msEl = o.GetPropertyOrNull("ms");
         if (msEl.ValueKind != JsonValueKind.Number)
             return (false, s, ErrorAt($"{path}.ms", "number", msEl));
-        s.Ms = msEl.GetInt32();
+        s.Ms = ToInt(msEl);
         return (true, s, string.Empty);
     }
 
@@ -534,7 +596,7 @@ public static class ScenePlanParser
         if (qtyEl.ValueKind != JsonValueKind.Number)
             return (false, s, ErrorAt($"{path}.qty", "number", qtyEl));
         s.ItemId = itemId;
-        s.Qty = qtyEl.GetInt32();
+        s.Qty = ToInt(qtyEl);
         return (true, s, string.Empty);
     }
 

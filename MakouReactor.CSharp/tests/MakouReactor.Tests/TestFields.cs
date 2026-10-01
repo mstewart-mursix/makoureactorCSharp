@@ -12,7 +12,8 @@ public sealed class MeshField : Field
         var id = new IdFile();
         id.Triangles.Add(new Triangle(V(min, min), V(max, min), V(max, max)));
         id.Triangles.Add(new Triangle(V(min, min), V(max, max), V(min, max)));
-        id.Access.Add(new Access(-1, 1, -1));
+        // Edge order is v0-v1, v1-v2, v2-v0; the two triangles share the diagonal.
+        id.Access.Add(new Access(-1, -1, 1));
         id.Access.Add(new Access(0, -1, -1));
         return id;
     }

@@ -173,6 +173,16 @@ public sealed class FieldPC : Field
         SetModified();
     }
 
+    /// <summary>
+    /// Installs a walkmesh (for example when the field had none) and marks the field modified.
+    /// </summary>
+    public void ReplaceWalkmesh(IdFile walkmesh)
+    {
+        ArgumentNullException.ThrowIfNull(walkmesh);
+        Walkmesh = walkmesh;
+        SetModified();
+    }
+
     public void ApplyModelLoaderChanges()
     {
         if (ModelLoader == null)

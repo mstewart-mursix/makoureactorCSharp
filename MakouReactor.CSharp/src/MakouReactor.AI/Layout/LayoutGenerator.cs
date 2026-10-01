@@ -26,18 +26,30 @@ public static class LayoutGenerator
     }
 
     /// <summary>
+    /// The walkable geometry placements should respect: the plan's own proposed walkmesh when it has
+    /// valid regions (the model designed the layout around it), otherwise the field's walkmesh.
+    /// </summary>
+    public static WalkmeshGeometry? PlacementMesh(ScenePlan plan, Field? field) =>
+        WalkmeshBuilder.ToGeometry(plan.Layout?.Walkmesh) ?? WalkmeshGeometry.From(field);
+
+    /// <summary>Placement bounds for a plan: the placement mesh's bounding box, else the field bounds.</summary>
+    public static Rect PlacementBounds(ScenePlan plan, Field? field) =>
+        PlacementMesh(plan, field)?.Bounds ?? new Rect(0, 0, 320, 240);
+
+    /// <summary>
     /// Adjust placements in-place in the <see cref="ScenePlan"/>.
     /// Returns a summary of changes performed.
     /// </summary>
     public static LayoutResult Adjust(ScenePlan plan, Field? field, LayoutOptions? opts = null)
     {
         var notes = new List<string>();
-        var bounds = FieldBounds(field);
+        var placementMesh = PlacementMesh(plan, field);
+        var bounds = placementMesh?.Bounds ?? FieldBounds(field);
         var minDistancePx = opts?.MinDistancePx ?? 24;
         var enableWalkmeshSnap = opts?.EnableWalkmeshSnap ?? false;
         var nudgeStepPx = opts?.NudgeStepPx ?? 8;
         var maxNudgeTries = opts?.MaxNudgeTries ?? 200;
-        var mesh = (opts?.ConstrainToWalkmesh ?? true) ? WalkmeshGeometry.From(field) : null;
+        var mesh = (opts?.ConstrainToWalkmesh ?? true) ? placementMesh : null;
         Func<Point, bool>? walkable = mesh is null ? null : mesh.Contains;
 
         // Ensure Layout exists

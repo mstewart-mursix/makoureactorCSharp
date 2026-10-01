@@ -173,6 +173,38 @@ public sealed class LgpArchive
     }
 
     /// <summary>
+    /// Writes a complete copy of this archive to <paramref name="destinationPath"/> with one file added or
+    /// replaced. The source archive on disk is not modified.
+    /// </summary>
+    /// <param name="destinationPath">Where to write the new archive.</param>
+    /// <param name="name">The archive-local path or an unambiguous existing file name.</param>
+    /// <param name="data">The bytes to store.</param>
+    /// <param name="cancellationToken">Cancels the copy.</param>
+    public void WriteFileCopy(string destinationPath, string name, byte[] data, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+        ArgumentNullException.ThrowIfNull(data);
+
+        var normalizedName = NormalizePath(name);
+        var files = _entries
+            .OrderBy(static entry => entry.Offset)
+            .Select(entry =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return new LgpArchiveFile(entry.FullPath, ReadFile(entry.FullPath));
+            })
+            .ToList();
+
+        var existingIndex = FindFileIndex(files, normalizedName);
+        if (existingIndex >= 0)
+            files[existingIndex] = new LgpArchiveFile(files[existingIndex].FullPath, data.ToArray());
+        else
+            files.Add(new LgpArchiveFile(normalizedName, data.ToArray()));
+
+        WriteArchive(destinationPath, files, CompanyName, ProductName, cancellationToken);
+    }
+
+    /// <summary>
     /// Removes a file, writing through a temporary archive before replacing the original.
     /// </summary>
     /// <param name="name">The archive-local path or an unambiguous existing file name.</param>

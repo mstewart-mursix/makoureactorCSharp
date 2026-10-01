@@ -24,7 +24,8 @@ public static class ScenePlanValidator
     {
         var options = opts ?? new ValidationOptions();
         var issues = new List<Issue>();
-        var mesh = WalkmeshGeometry.From(field);
+        ValidateWalkmeshPlan(plan, issues);
+        var mesh = LayoutGenerator.PlacementMesh(plan, field);
 
         ValidateActors(plan, field, mesh, issues);
 
@@ -39,12 +40,39 @@ public static class ScenePlanValidator
     }
 
     // -----------------------------------------------------------------------
+    // Proposed walkmesh validation (schema 1.1)
+    // -----------------------------------------------------------------------
+
+    private static void ValidateWalkmeshPlan(ScenePlan plan, List<Issue> out_)
+    {
+        var walkmesh = plan.Layout?.Walkmesh;
+        if (walkmesh is null)
+            return;
+
+        var seen = new HashSet<string>();
+        for (var i = 0; i < walkmesh.Regions.Count; i++)
+        {
+            var region = walkmesh.Regions[i];
+            var path = $"layout.walkmesh.regions[{i}]";
+
+            if (string.IsNullOrWhiteSpace(region.Id))
+                Add(out_, Severity.Error, $"{path}.id", "Empty region id");
+            else if (!seen.Add(region.Id))
+                Add(out_, Severity.Error, $"{path}.id", $"Duplicate region id '{region.Id}'");
+
+            var problem = WalkmeshBuilder.ValidatePolygon(region.Polygon);
+            if (problem != null)
+                Add(out_, Severity.Error, $"{path}.polygon", problem);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Actor validation
     // -----------------------------------------------------------------------
 
     private static void ValidateActors(ScenePlan plan, Field? field, WalkmeshGeometry? mesh, List<Issue> out_)
     {
-        var bounds = LayoutGenerator.FieldBounds(field);
+        var bounds = mesh?.Bounds ?? LayoutGenerator.FieldBounds(field);
         var seen = new HashSet<string>();
 
         for (int i = 0; i < plan.Actors.Count; i++)
@@ -97,7 +125,7 @@ public static class ScenePlanValidator
     private static void ValidateEvents(ScenePlan plan, Field? field, WalkmeshGeometry? mesh,
                                        ValidationOptions opts, List<Issue> out_)
     {
-        var bounds = LayoutGenerator.FieldBounds(field);
+        var bounds = mesh?.Bounds ?? LayoutGenerator.FieldBounds(field);
         var actorIds = CollectActorIds(plan);
 
         for (int i = 0; i < plan.Events.Count; i++)
@@ -210,7 +238,7 @@ public static class ScenePlanValidator
 
     private static void ValidateLayout(ScenePlan plan, Field? field, WalkmeshGeometry? mesh, List<Issue> out_)
     {
-        var bounds = LayoutGenerator.FieldBounds(field);
+        var bounds = mesh?.Bounds ?? LayoutGenerator.FieldBounds(field);
 
         if (!bounds.Contains(plan.Layout.SpawnPoint))
             Add(out_, Severity.Warn, "layout.spawnPoint",

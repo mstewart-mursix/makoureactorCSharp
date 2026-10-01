@@ -56,6 +56,10 @@ public static class PromptBuilder
             props?: { id:string; position:{x:number;y:number}; }[];
             spawnPoint?: { x:number; y:number };
             restrictions?: { walkmeshHint?: "open"|"tight"; } // hint only
+            // schema 1.1 (set meta.version to "1.1" when used). Only include walkmesh when asked to
+            // design the layout of a new area. Each polygon is a simple outline (>= 3 points,
+            // no self-intersections); actors, props and spawnPoint must lie inside the regions.
+            walkmesh?: { regions: { id:string; polygon:{x:number;y:number}[] }[] };
           };
         }
 
