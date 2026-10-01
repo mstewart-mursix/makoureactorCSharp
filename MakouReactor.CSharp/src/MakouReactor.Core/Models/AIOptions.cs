@@ -83,6 +83,20 @@ public enum WalkmeshMode
     Replace,
 }
 
+/// <summary>Whether (and how) a plan's events are written into the field's scripts.</summary>
+public enum ScriptMode
+{
+    /// <summary>Only dialogue text is written; events stay in the plan JSON (default, the safe choice).</summary>
+    None,
+
+    /// <summary>
+    /// Append a new script group whose main script runs the plan's "on_enter"/"auto" events (dialogue,
+    /// waits, and numeric battles/items). Steps that need an entity, a line or variable mapping are skipped
+    /// and reported.
+    /// </summary>
+    AppendGroup,
+}
+
 /// <summary>
 /// Options for applying a scene plan to a field.
 /// Maps to <c>struct ApplyOptions</c> in <c>ai/ScenePlanMapper.h</c>.
@@ -94,6 +108,9 @@ public sealed class ApplyOptions
 
     /// <summary>How a proposed walkmesh (schema 1.1) is combined with the field's walkmesh.</summary>
     public WalkmeshMode WalkmeshMode { get; init; } = WalkmeshMode.Ignore;
+
+    /// <summary>Whether the plan's events are compiled into a new script group.</summary>
+    public ScriptMode ScriptMode { get; init; } = ScriptMode.None;
 }
 
 /// <summary>

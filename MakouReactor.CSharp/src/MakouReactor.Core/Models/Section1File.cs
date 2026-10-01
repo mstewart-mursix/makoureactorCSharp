@@ -33,6 +33,7 @@ public sealed class Section1File
     public int GrpScriptCount => GrpScripts.Count;
     public int TextCount => Texts.Count;
     private bool _isDemo;
+    private GrpScript[] _loadedGroups = [];
     private int _akaoPositionsOffset;
     private uint _firstAkaoOffset;
 
@@ -122,6 +123,7 @@ public sealed class Section1File
             GrpScripts.Add(group);
         }
 
+        _loadedGroups = [.. GrpScripts];
         LoadTexts(data, TextSectionOffset, firstAkaoOffset);
         TutorialsAndSounds = TutorialFile.Open(data);
     }
@@ -132,13 +134,38 @@ public sealed class Section1File
     public void InsertGrpScript(int index, GrpScript grpScript)
     {
         if (index >= 0 && index <= GrpScripts.Count && GrpScripts.Count < MaxGrpScriptCount)
+        {
             GrpScripts.Insert(index, grpScript);
+            IsModified = true;
+        }
     }
+
+    /// <summary>
+    /// Appends a script group after the existing ones. Appending is the one structural edit
+    /// <see cref="Save"/> can write (existing groups are left byte-for-byte untouched).
+    /// </summary>
+    /// <returns>False when the group limit is reached.</returns>
+    public bool AppendGrpScript(GrpScript grpScript)
+    {
+        ArgumentNullException.ThrowIfNull(grpScript);
+        if (GrpScripts.Count >= MaxGrpScriptCount)
+            return false;
+
+        GrpScripts.Add(grpScript);
+        IsModified = true;
+        return true;
+    }
+
+    /// <summary>Number of groups that came from the loaded data (the rest were appended).</summary>
+    public int LoadedGrpScriptCount => _loadedGroups.Length;
 
     public void RemoveGrpScript(int index)
     {
         if (index >= 0 && index < GrpScripts.Count)
+        {
             GrpScripts.RemoveAt(index);
+            IsModified = true;
+        }
     }
 
     public FF7String? Text(int textId) =>
@@ -272,6 +299,9 @@ public sealed class Section1File
     {
         if (!IsModified)
             return RawData.ToArray();
+
+        if (HasStructuralChanges())
+            return SaveWithAppendedGroups();
 
         var textStart = TextSectionOffset;
         var oldTextEnd = _firstAkaoOffset >= textStart && _firstAkaoOffset <= RawData.Length
@@ -442,6 +472,206 @@ public sealed class Section1File
             BinaryPrimitives.WriteUInt32LittleEndian(
                 prefix.Slice(offset, 4),
                 checked((uint)(value + delta)));
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    // Appending script groups
+    // ──────────────────────────────────────────────
+
+    /// <summary>
+    /// True when the group list differs from the loaded one (anything other than edits inside the
+    /// loaded groups).
+    /// </summary>
+    private bool HasStructuralChanges() =>
+        GrpScripts.Count != _loadedGroups.Length;
+
+    /// <summary>
+    /// Writes the section with extra groups appended. The loaded groups' bytes and pointer tables are
+    /// preserved exactly (pointers are only rebased by the amount the new names/tables push the script
+    /// area down); new scripts go after the existing ones, then the texts and the AKAO block follow with
+    /// their offsets shifted. Removing or reordering groups is not supported and throws.
+    /// </summary>
+    private byte[] SaveWithAppendedGroups()
+    {
+        var loadedCount = _loadedGroups.Length;
+        if (GrpScripts.Count < loadedCount)
+            throw new NotSupportedException("Removing script groups is not supported when saving Section 1.");
+        for (var i = 0; i < loadedCount; i++)
+        {
+            if (!ReferenceEquals(GrpScripts[i], _loadedGroups[i]))
+                throw new NotSupportedException("Reordering or replacing script groups is not supported when saving Section 1.");
+        }
+
+        var newGroups = GrpScripts.Skip(loadedCount).ToArray();
+        var scriptCount = _isDemo ? 16 : 32;
+        var headerSize = _isDemo ? 24 : 32;
+
+        var oldNamesLength = loadedCount * 8;
+        var akaoTableOffset = headerSize + oldNamesLength;
+        var akaoTableLength = AkaoCount * 4;
+        var oldTablesOffset = akaoTableOffset + akaoTableLength;
+        var oldTablesLength = loadedCount * scriptCount * 2;
+        var oldScriptsStart = oldTablesOffset + oldTablesLength;
+        var oldTextStart = TextSectionOffset;
+        if (oldScriptsStart > oldTextStart || oldTextStart > RawData.Length)
+            throw new InvalidDataException("Section 1 layout is inconsistent; cannot append script groups.");
+
+        var oldTextEnd = _firstAkaoOffset >= oldTextStart && _firstAkaoOffset <= RawData.Length
+            ? (int)_firstAkaoOffset
+            : RawData.Length;
+
+        var shift = newGroups.Length * (8 + (scriptCount * 2));
+        var newScriptsStart = oldScriptsStart + shift;
+        var oldScriptArea = RawData.AsSpan(oldScriptsStart, oldTextStart - oldScriptsStart);
+
+        // New scripts follow the existing script area; every new group gets its own pointer table.
+        var newScriptBytes = new MemoryStream();
+        var newTables = new byte[newGroups.Length * scriptCount * 2];
+        var cursor = newScriptsStart + oldScriptArea.Length;
+        for (var g = 0; g < newGroups.Length; g++)
+        {
+            var starts = new int[scriptCount];
+            var present = new bool[scriptCount];
+            for (var slot = 0; slot < newGroups[g].Scripts.Count; slot++)
+            {
+                var bytes = newGroups[g].Scripts[slot].Compile();
+                if (bytes.Length == 0)
+                    continue;
+                if (slot >= scriptCount)
+                    throw new InvalidDataException(
+                        $"Group '{newGroups[g].Name}' has a script in slot {slot}, but this field only has {scriptCount} script slots.");
+
+                starts[slot] = cursor + (int)newScriptBytes.Length;
+                present[slot] = true;
+                newScriptBytes.Write(bytes);
+            }
+
+            // Empty slots point at the next script (or the end of the group), which is how the loader
+            // recognises them as empty.
+            var groupEnd = cursor + (int)newScriptBytes.Length;
+            var nextStart = groupEnd;
+            for (var slot = scriptCount - 1; slot >= 0; slot--)
+            {
+                if (present[slot])
+                    nextStart = starts[slot];
+                else
+                    starts[slot] = nextStart;
+            }
+
+            for (var slot = 0; slot < scriptCount; slot++)
+            {
+                if (starts[slot] > ushort.MaxValue)
+                    throw new InvalidDataException("Section 1 script size overflow (scripts exceed 64 KiB).");
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    newTables.AsSpan(((g * scriptCount) + slot) * 2, 2), (ushort)starts[slot]);
+            }
+        }
+
+        var newTextStart = newScriptsStart + oldScriptArea.Length + (int)newScriptBytes.Length;
+        if (newTextStart > ushort.MaxValue)
+            throw new InvalidDataException("Section 1 script size overflow (scripts exceed 64 KiB).");
+
+        var textSection = BuildTextSection(Texts);
+        var akaoStart = newTextStart + textSection.Length;
+        if (AkaoCount > 0 && akaoStart % 4 != 0)
+        {
+            // Keep the AKAO block word aligned, like the Qt writer does.
+            var padded = new byte[textSection.Length + (4 - (akaoStart % 4))];
+            textSection.CopyTo(padded, 0);
+            textSection = padded;
+            akaoStart = newTextStart + textSection.Length;
+        }
+
+        var akaoShift = akaoStart - oldTextEnd;
+        var totalSize = newTextStart + textSection.Length + (RawData.Length - oldTextEnd);
+        var output = new byte[totalSize];
+
+        // Header (version, scale, author, map name ...) with the changed counts patched in.
+        RawData.AsSpan(0, headerSize).CopyTo(output);
+        output[2] = checked((byte)GrpScripts.Count);
+        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(4, 2), (ushort)newTextStart);
+
+        var write = headerSize;
+        RawData.AsSpan(headerSize, oldNamesLength).CopyTo(output.AsSpan(write));
+        write += oldNamesLength;
+        foreach (var group in newGroups)
+        {
+            var name = Encoding.Latin1.GetBytes(group.Name);
+            name.AsSpan(0, Math.Min(name.Length, 8)).CopyTo(output.AsSpan(write));
+            write += 8;
+        }
+
+        // AKAO position table, shifted to where the AKAO block now lives.
+        for (var index = 0; index < AkaoCount; index++)
+        {
+            var value = BinaryPrimitives.ReadUInt32LittleEndian(RawData.AsSpan(akaoTableOffset + (index * 4), 4));
+            if (value >= oldTextEnd)
+                value = checked((uint)(value + akaoShift));
+            BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(write, 4), value);
+            write += 4;
+        }
+
+        // Loaded groups' pointer tables, rebased by the amount the script area moved.
+        for (var index = 0; index < loadedCount * scriptCount; index++)
+        {
+            var value = BinaryPrimitives.ReadUInt16LittleEndian(RawData.AsSpan(oldTablesOffset + (index * 2), 2));
+            var moved = value + shift;
+            if (moved > ushort.MaxValue)
+                throw new InvalidDataException("Section 1 script size overflow (scripts exceed 64 KiB).");
+            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(write, 2), (ushort)moved);
+            write += 2;
+        }
+
+        newTables.CopyTo(output.AsSpan(write));
+        write += newTables.Length;
+
+        oldScriptArea.CopyTo(output.AsSpan(write));
+        write += oldScriptArea.Length;
+
+        // Edits made inside loaded groups (same-length patches) still apply to the copied script area.
+        ApplyLoadedGroupPatches(output, newScriptsStart, oldScriptsStart);
+
+        newScriptBytes.ToArray().CopyTo(output.AsSpan(write));
+        write += (int)newScriptBytes.Length;
+
+        textSection.CopyTo(output.AsSpan(write));
+        write += textSection.Length;
+
+        RawData.AsSpan(oldTextEnd).CopyTo(output.AsSpan(write));
+        return output;
+    }
+
+    /// <summary>
+    /// Copies same-length script edits made to loaded groups into the rebuilt output, using the loaded
+    /// groups' original pointers (rebased by the move of the script area).
+    /// </summary>
+    private void ApplyLoadedGroupPatches(byte[] output, int newScriptsStart, int oldScriptsStart)
+    {
+        var move = newScriptsStart - oldScriptsStart;
+        var scriptCount = _isDemo ? 16 : 32;
+        var headerSize = _isDemo ? 24 : 32;
+        var loadedCount = _loadedGroups.Length;
+        var oldTablesOffset = headerSize + (loadedCount * 8) + (AkaoCount * 4);
+
+        for (var groupIndex = 0; groupIndex < loadedCount; groupIndex++)
+        {
+            for (var slot = 0; slot < scriptCount && slot < _loadedGroups[groupIndex].Scripts.Count; slot++)
+            {
+                var start = BinaryPrimitives.ReadUInt16LittleEndian(
+                    RawData.AsSpan(oldTablesOffset + (((groupIndex * scriptCount) + slot) * 2), 2));
+                var end = FindScriptEnd(RawData, oldTablesOffset, groupIndex, slot, loadedCount, scriptCount, (ushort)start);
+                if (end <= start || end > RawData.Length)
+                    continue;
+
+                var bytes = _loadedGroups[groupIndex].Scripts[slot].Compile();
+                if (bytes.Length != end - start)
+                    continue;
+
+                var target = start + move;
+                if (target + bytes.Length <= output.Length)
+                    bytes.CopyTo(output.AsSpan(target, bytes.Length));
+            }
         }
     }
 

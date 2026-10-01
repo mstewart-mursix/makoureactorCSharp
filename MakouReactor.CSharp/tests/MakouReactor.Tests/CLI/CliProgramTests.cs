@@ -174,6 +174,43 @@ public sealed class CliProgramTests
         finally { DeleteArchive(path); }
     }
 
+    [Fact]
+    public async Task apply_script_mode_group_adds_a_script_group_and_dry_run_describes_it()
+    {
+        var path = CreateArchive(("md1stin", FieldPC.CreateEmpty("md1stin").SaveCompressed()));
+        var planPath = Path.Combine(Path.GetTempPath(), $"mr_plan_{Guid.NewGuid():N}.json");
+        File.WriteAllText(planPath, """
+            {"meta":{"title":"Intro","model":"m","version":"1.0"},
+             "actors":[{"id":"narrator","position":{"x":10,"y":10}}],
+             "events":[{"id":"intro","trigger":"on_enter","steps":[
+               {"type":"say","actorId":"narrator","text":"Welcome."},
+               {"type":"wait","ms":300}]}]}
+            """);
+        try
+        {
+            var dry = await RunCliAsync("apply", "--archive", path, "--field", "md1stin", "--plan", planPath,
+                "--script-mode", "group", "--dry-run");
+            dry.ExitCode.Should().Be(0, dry.StdOut + dry.StdErr);
+            dry.StdOut.Should().Contain("Add a script group with 2 step(s)");
+
+            var real = await RunCliAsync("apply", "--archive", path, "--field", "md1stin", "--plan", planPath,
+                "--script-mode", "group");
+            real.ExitCode.Should().Be(0, real.StdOut + real.StdErr);
+            FieldArchive.Open(path).OpenField("md1stin").ScriptsAndTexts!.GrpScripts
+                .Select(g => g.Name).Should().Contain("ai_01");
+
+            var bad = await RunCliAsync("apply", "--archive", path, "--field", "md1stin", "--plan", planPath,
+                "--script-mode", "bogus");
+            bad.ExitCode.Should().Be(1);
+            bad.StdErr.Should().Contain("--script-mode");
+        }
+        finally
+        {
+            File.Delete(planPath);
+            DeleteArchive(path);
+        }
+    }
+
     private static void DeleteArchive(string path)
     {
         File.Delete(path);

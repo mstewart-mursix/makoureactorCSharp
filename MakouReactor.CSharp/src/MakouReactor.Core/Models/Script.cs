@@ -255,7 +255,8 @@ public sealed class Script
 
     private static byte ClampByte(int value) => (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
 
-    private static (ushort Width, ushort Height) EstimateTextWindowSize(string text)
+    /// <summary>Estimate the window size (pixels) needed to show <paramref name="text"/>.</summary>
+    public static (ushort Width, ushort Height) EstimateTextWindowSize(string text)
     {
         var lines = text
             .Replace("{NEW}", "\n", StringComparison.OrdinalIgnoreCase)
@@ -293,7 +294,8 @@ public sealed class Script
         return count;
     }
 
-    private static (short X, short Y) ClampWindowPosition(short x, short y, ushort width, ushort height)
+    /// <summary>Move a window so it stays inside the visible field area.</summary>
+    public static (short X, short Y) ClampWindowPosition(short x, short y, ushort width, ushort height)
     {
         var clampedX = x;
         var clampedY = y;

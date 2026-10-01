@@ -42,12 +42,14 @@ public static class ScenePlanApplier
     /// <param name="plan">The plan; layout adjustment may move its placements.</param>
     /// <param name="dryRun">When true nothing is written; the summary describes the change.</param>
     /// <param name="walkmeshMode">How a proposed walkmesh is combined with the field's.</param>
+    /// <param name="scriptMode">Whether on_enter/auto events are compiled into a new script group.</param>
     public static ScenePlanApplyOutcome ApplyToArchive(
         string archivePath,
         string fieldName,
         ScenePlan plan,
         bool dryRun = false,
-        WalkmeshMode walkmeshMode = WalkmeshMode.Ignore)
+        WalkmeshMode walkmeshMode = WalkmeshMode.Ignore,
+        ScriptMode scriptMode = ScriptMode.None)
     {
         ArgumentNullException.ThrowIfNull(plan);
 
@@ -76,7 +78,7 @@ public static class ScenePlanApplier
         }
 
         var preview = ScenePlanMapper.ApplyToField(plan, field,
-            new ApplyOptions { PreviewOnly = true, WalkmeshMode = walkmeshMode });
+            new ApplyOptions { PreviewOnly = true, WalkmeshMode = walkmeshMode, ScriptMode = scriptMode });
         if (!preview.Ok)
             return ScenePlanApplyOutcome.Failure(preview.Error, validation);
 
@@ -93,7 +95,7 @@ public static class ScenePlanApplier
         }
 
         var applied = ScenePlanMapper.ApplyToField(plan, field,
-            new ApplyOptions { PreviewOnly = false, WalkmeshMode = walkmeshMode });
+            new ApplyOptions { PreviewOnly = false, WalkmeshMode = walkmeshMode, ScriptMode = scriptMode });
         if (!applied.Ok)
             return ScenePlanApplyOutcome.Failure(applied.Error, validation);
 

@@ -194,7 +194,7 @@ public partial class LLMSceneDialog : Window
         var preview = ScenePlanMapper.ApplyToField(
             _latestResult.Plan,
             _field,
-            new ApplyOptions { PreviewOnly = true, WalkmeshMode = SelectedWalkmeshMode() });
+            new ApplyOptions { PreviewOnly = true, WalkmeshMode = SelectedWalkmeshMode(), ScriptMode = SelectedScriptMode() });
         PreviewSummaryBox.Text = preview.Ok ? preview.Summary : preview.Error;
     }
 
@@ -204,6 +204,18 @@ public partial class LLMSceneDialog : Window
         2 => WalkmeshMode.Replace,
         _ => WalkmeshMode.Ignore,
     };
+
+    private ScriptMode SelectedScriptMode() =>
+        WriteScriptsCheck.IsChecked == true ? ScriptMode.AppendGroup : ScriptMode.None;
+
+    private void WriteScriptsCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        // Also fires while the window is being constructed, before any result exists.
+        if (_latestResult == null)
+            return;
+
+        RefreshPreview();
+    }
 
     private void WalkmeshModeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -369,7 +381,7 @@ public partial class LLMSceneDialog : Window
         var apply = ScenePlanMapper.ApplyToField(
             _latestResult.Plan,
             _field,
-            new ApplyOptions { PreviewOnly = false, WalkmeshMode = SelectedWalkmeshMode() });
+            new ApplyOptions { PreviewOnly = false, WalkmeshMode = SelectedWalkmeshMode(), ScriptMode = SelectedScriptMode() });
         if (!apply.Ok)
         {
             StatusLabel.Text = $"Apply failed: {apply.Error}";

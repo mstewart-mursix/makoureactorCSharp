@@ -318,12 +318,15 @@ public static class Program
         var planOpt = new Option<string>("--plan", "Scene-plan JSON produced by 'generate'") { IsRequired = true };
         var dryRunOpt = new Option<bool>("--dry-run", "Print what would change without writing anything");
         var walkmeshOpt = new Option<string>("--walkmesh-mode", () => "ignore", "ignore | merge | replace");
+        var scriptOpt = new Option<string>("--script-mode", () => "off",
+            "off | group  (group: compile on_enter/auto events into a new script group - experimental)");
         var cmd = new Command("apply", "Apply a scene plan to a field (backup, verify, atomic replace)");
         cmd.AddOption(archiveOpt);
         cmd.AddOption(fieldOpt);
         cmd.AddOption(planOpt);
         cmd.AddOption(dryRunOpt);
         cmd.AddOption(walkmeshOpt);
+        cmd.AddOption(scriptOpt);
 
         cmd.SetHandler((InvocationContext ctx) =>
         {
@@ -334,6 +337,7 @@ public static class Program
                 parse.GetValueForOption(planOpt)!,
                 parse.GetValueForOption(dryRunOpt),
                 parse.GetValueForOption(walkmeshOpt)!,
+                parse.GetValueForOption(scriptOpt)!,
                 Console.Out,
                 Console.Error);
         });
@@ -343,8 +347,22 @@ public static class Program
 
     /// <summary>Returns 0 on success, 1 for usage/IO problems, 2 for a plan that fails validation.</summary>
     internal static int Apply(string archive, string field, string planPath, bool dryRun, string walkmeshMode,
-                              TextWriter output, TextWriter error)
+                              string scriptMode, TextWriter output, TextWriter error)
     {
+        ScriptMode script;
+        switch (scriptMode.ToLowerInvariant())
+        {
+            case "off":
+                script = ScriptMode.None;
+                break;
+            case "group":
+                script = ScriptMode.AppendGroup;
+                break;
+            default:
+                error.WriteLine($"Unknown --script-mode '{scriptMode}' (use off or group).");
+                return 1;
+        }
+
         if (!Enum.TryParse<WalkmeshMode>(walkmeshMode, ignoreCase: true, out var mode))
         {
             error.WriteLine($"Unknown --walkmesh-mode '{walkmeshMode}' (use ignore, merge or replace).");
@@ -364,7 +382,7 @@ public static class Program
             return 1;
         }
 
-        var outcome = ScenePlanApplier.ApplyToArchive(archive, field, parsed.Plan, dryRun, mode);
+        var outcome = ScenePlanApplier.ApplyToArchive(archive, field, parsed.Plan, dryRun, mode, script);
         if (outcome.Validation != null)
         {
             foreach (var issue in outcome.Validation.Issues)

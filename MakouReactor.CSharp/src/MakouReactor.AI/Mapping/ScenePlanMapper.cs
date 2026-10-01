@@ -36,7 +36,7 @@ public static class ScenePlanMapper
             {
                 Ok = true,
                 GroupName = groupName,
-                Summary = $"{summary}{Environment.NewLine}{DescribeChanges(plan, field, opts.WalkmeshMode)}",
+                Summary = $"{summary}{Environment.NewLine}{DescribeChanges(plan, field, opts.WalkmeshMode, opts.ScriptMode)}",
             };
         }
 
@@ -57,7 +57,7 @@ public static class ScenePlanMapper
                 }
             }
 
-            var applyResult = ApplyDialogueToPcField(plan, pcField, groupName, summary);
+            var applyResult = ApplyToPcField(plan, pcField, groupName, summary, opts);
             if (!applyResult.Ok || walkmesh == null)
                 return applyResult;
 
@@ -68,7 +68,7 @@ public static class ScenePlanMapper
             pcField.ApplyWalkmeshChanges();
             var verb = opts.WalkmeshMode == WalkmeshMode.Replace ? "Replaced the walkmesh with" : "Added";
             return ApplyResult.Success(
-                groupName,
+                applyResult.GroupName,
                 $"{applyResult.Summary}{Environment.NewLine}{verb} {added} walkmesh triangle(s) from {walkmesh.Regions.Count} region(s).");
         }
 
@@ -145,12 +145,19 @@ public static class ScenePlanMapper
     /// Describe precisely what <see cref="ApplyToField"/> will write to <paramref name="field"/> and what
     /// stays only in the plan JSON, so the preview never overstates the change.
     /// </summary>
-    public static string DescribeChanges(ScenePlan plan, Field? field, WalkmeshMode walkmeshMode = WalkmeshMode.Ignore)
+    public static string DescribeChanges(ScenePlan plan, Field? field,
+                                         WalkmeshMode walkmeshMode = WalkmeshMode.Ignore,
+                                         ScriptMode scriptMode = ScriptMode.None)
     {
         var sb = new StringBuilder();
         sb.AppendLine("Changes to the field:");
 
-        var texts = CollectDialogueTexts(plan).Count();
+        var entries = CollectDialogue(plan);
+        var texts = entries.Count;
+        var compiled = new CompiledScene();
+        if (field is FieldPC { ScriptsAndTexts: { } sectionForScript } && scriptMode == ScriptMode.AppendGroup)
+            compiled = CompileEvents(plan, entries, sectionForScript.TextCount);
+
         if (field is FieldPC { ScriptsAndTexts: { } section })
         {
             if (texts == 0)
@@ -175,8 +182,24 @@ public static class ScenePlanMapper
         var notWritten = new List<string>();
         if (plan.Actors.Count > 0)
             notWritten.Add($"{plan.Actors.Count} actor(s)");
-        if (plan.Events.Count > 0)
-            notWritten.Add($"{plan.Events.Count} event(s) with {steps} step(s)");
+        if (scriptMode == ScriptMode.AppendGroup)
+        {
+            if (!compiled.IsEmpty)
+            {
+                sb.AppendLine($" - Add a script group with {compiled.StepsWritten} step(s) that run when the field loads (experimental).");
+            }
+            else if (plan.Events.Count > 0)
+            {
+                sb.AppendLine(" - No event steps could be compiled into a script group.");
+            }
+
+            foreach (var skip in compiled.Skipped)
+                sb.AppendLine($"   skipped: {skip}");
+        }
+        else if (plan.Events.Count > 0)
+        {
+            notWritten.Add($"{plan.Events.Count} event(s) with {steps} step(s) (script mode is Off)");
+        }
         if (plan.Layout.Props.Count > 0)
             notWritten.Add($"{plan.Layout.Props.Count} prop(s)");
         if (plan.Layout.Walkmesh is { Regions.Count: > 0 } proposed)
@@ -203,51 +226,131 @@ public static class ScenePlanMapper
         return sb.ToString().TrimEnd();
     }
 
-    private static ApplyResult ApplyDialogueToPcField(
+    private sealed record TextEntry(string Text, EventStep? Step);
+
+    private static ApplyResult ApplyToPcField(
         ScenePlan plan,
         FieldPC field,
         string groupName,
-        string summary)
+        string summary,
+        ApplyOptions opts)
     {
-        if (field.ScriptsAndTexts == null)
+        var section = field.ScriptsAndTexts;
+        if (section == null)
             return ApplyResult.Failure("Active field does not have a parsed Section 1 text table.");
 
-        var texts = CollectDialogueTexts(plan).ToArray();
-        if (texts.Length == 0)
-        {
-            field.SetModified();
-            return ApplyResult.Success(groupName, $"{summary}{Environment.NewLine}No dialogue text was added.");
-        }
-
-        if (field.ScriptsAndTexts.TextCount + texts.Length > Section1File.MaxTextCount)
+        var entries = CollectDialogue(plan);
+        if (section.TextCount + entries.Count > Section1File.MaxTextCount)
         {
             return ApplyResult.Failure(
                 $"Applying this plan would exceed the Section 1 text limit of {Section1File.MaxTextCount}.");
         }
 
-        var startIndex = field.ScriptsAndTexts.TextCount;
-        for (var index = 0; index < texts.Length; index++)
-            field.InsertText(startIndex + index, new FF7String(texts[index]));
+        var startIndex = section.TextCount;
 
-        var applySummary =
-            $"{summary}{Environment.NewLine}" +
-            $"Added {texts.Length} dialogue text entr{(texts.Length == 1 ? "y" : "ies")} starting at text {startIndex}.";
-        return ApplyResult.Success(groupName, applySummary);
+        // Compile before changing anything, so a failure cannot leave texts without their script.
+        var compiled = new CompiledScene();
+        string? scriptGroupName = null;
+        if (opts.ScriptMode == ScriptMode.AppendGroup)
+        {
+            compiled = CompileEvents(plan, entries, startIndex);
+            if (!compiled.IsEmpty)
+            {
+                if (section.GrpScripts.Count >= Section1File.MaxGrpScriptCount)
+                    return ApplyResult.Failure($"The field already has the maximum of {Section1File.MaxGrpScriptCount} script groups.");
+
+                scriptGroupName = UniqueGroupName(section, opts.GroupNameOverride);
+            }
+        }
+
+        if (entries.Count == 0 && compiled.IsEmpty)
+        {
+            field.SetModified();
+            var nothing = new StringBuilder($"{summary}{Environment.NewLine}No dialogue text was added.");
+            foreach (var skip in compiled.Skipped)
+                nothing.Append(Environment.NewLine).Append($"  skipped: {skip}");
+            return ApplyResult.Success(groupName, nothing.ToString());
+        }
+
+        // Texts first (ids are stable because they are appended), then the group that references them.
+        for (var index = 0; index < entries.Count; index++)
+            field.InsertText(startIndex + index, new FF7String(entries[index].Text));
+
+        var applySummary = new StringBuilder(summary);
+        if (entries.Count > 0)
+        {
+            applySummary.Append(Environment.NewLine).Append(
+                $"Added {entries.Count} dialogue text entr{(entries.Count == 1 ? "y" : "ies")} starting at text {startIndex}.");
+        }
+
+        if (scriptGroupName != null)
+        {
+            var group = new GrpScript(scriptGroupName);
+            group.SetScript(0, new Script(compiled.Script));
+            section.AppendGrpScript(group);
+            field.SetModified();
+            applySummary.Append(Environment.NewLine).Append(
+                $"Added script group '{scriptGroupName}' with {compiled.StepsWritten} step(s) that run when the field loads.");
+            groupName = scriptGroupName;
+        }
+
+        foreach (var skip in compiled.Skipped)
+            applySummary.Append(Environment.NewLine).Append($"  skipped: {skip}");
+
+        return ApplyResult.Success(groupName, applySummary.ToString());
     }
 
-    private static IEnumerable<string> CollectDialogueTexts(ScenePlan plan)
+    private static CompiledScene CompileEvents(ScenePlan plan, IReadOnlyList<TextEntry> entries, int firstTextId)
     {
+        var ids = new Dictionary<EventStep, int>(ReferenceEqualityComparer.Instance);
+        for (var index = 0; index < entries.Count; index++)
+        {
+            if (entries[index].Step is { } step)
+                ids[step] = firstTextId + index;
+        }
+
+        return SceneScriptCompiler.Compile(plan, step => ids.TryGetValue(step, out var id) ? id : null);
+    }
+
+    /// <summary>A group name of at most 8 characters that no existing group uses.</summary>
+    private static string UniqueGroupName(Section1File section, string? preferred)
+    {
+        var taken = new HashSet<string>(section.GrpScripts.Select(static g => g.Name), StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(preferred))
+        {
+            var trimmed = preferred.Trim();
+            trimmed = trimmed.Length > 8 ? trimmed[..8] : trimmed;
+            if (!taken.Contains(trimmed))
+                return trimmed;
+        }
+
+        for (var n = 1; n < 1000; n++)
+        {
+            var candidate = $"ai_{n:00}";
+            if (!taken.Contains(candidate))
+                return candidate;
+        }
+
+        return "ai_new";
+    }
+
+    private static List<TextEntry> CollectDialogue(ScenePlan plan)
+    {
+        var entries = new List<TextEntry>();
         foreach (var line in plan.Dialog)
         {
             if (!string.IsNullOrWhiteSpace(line.Text))
-                yield return line.Text;
+                entries.Add(new TextEntry(line.Text, null));
         }
 
         foreach (var step in plan.Events.SelectMany(static item => FlattenSteps(item.Steps)))
         {
             if (step.Type == EventStepType.Say && !string.IsNullOrWhiteSpace(step.Text))
-                yield return step.Text;
+                entries.Add(new TextEntry(step.Text, step));
         }
+
+        return entries;
     }
 
     private static IEnumerable<EventStep> FlattenSteps(IEnumerable<EventStep> steps)

@@ -31,6 +31,10 @@
             <CheckBox x:Name="GenDialogCheck" Content="Dialogue" IsChecked="True" Margin="0,0,12,0" VerticalAlignment="Center"/>
             <CheckBox x:Name="GenLayoutCheck" Content="Layout" IsChecked="True" Margin="0,0,12,0" VerticalAlignment="Center"/>
             <CheckBox x:Name="GenScriptsCheck" Content="Scripts" IsChecked="True" Margin="0,0,16,0" VerticalAlignment="Center"/>
+            <CheckBox x:Name="WriteScriptsCheck" Content="Write events as script group (experimental)"
+                      Margin="0,0,16,0" VerticalAlignment="Center"
+                      ToolTip="Compiles on_enter/auto events (dialogue, waits, numeric battles and items) into a new script group that runs when the field loads. Off keeps events in the plan only."
+                      Checked="WriteScriptsCheck_Changed" Unchecked="WriteScriptsCheck_Changed"/>
             <TextBlock Text="Walkmesh:" VerticalAlignment="Center" Margin="0,0,4,0"/>
             <ComboBox x:Name="WalkmeshModeBox" Width="200" Margin="0,0,16,0" SelectedIndex="0"
                       ToolTip="What to do with a walkmesh the model proposes. Ignore never touches the field's walkmesh."

@@ -93,6 +93,13 @@ public static class PromptBuilder
         lines.Add($"  - genLayout: {(p.GenLayout ? "true" : "false")}");
         lines.Add($"  - genScripts: {(p.GenScripts ? "true" : "false")}");
         lines.Add($"- Field size hint (px): width={widthPx}, height={heightPx}");
+        if (p.GenScripts)
+        {
+            lines.Add("- Events that should run by themselves when the field loads use trigger \"on_enter\".");
+            lines.Add("- Only these steps become game script: say, wait, battle (encounterId a plain number) and");
+            lines.Add("  give_item (itemId a plain number). Other steps are kept as notes, so prefer these for the core scene.");
+        }
+
         lines.Add("- Avoid overlapping placements; respect basic walkable regions if mentioned.");
         lines.Add("- Keep result coherent and lore-friendly.");
         if (!string.IsNullOrWhiteSpace(fieldContext))
