@@ -90,6 +90,98 @@ public sealed class CliProgramTests
         finally { File.Delete(path); }
     }
 
+    [Fact]
+    public async Task apply_dry_run_describes_changes_and_writes_nothing()
+    {
+        var path = CreateArchive(("md1stin", FieldPC.CreateEmpty("md1stin").SaveCompressed()));
+        var before = File.ReadAllBytes(path);
+        try
+        {
+            var plan = Path.Combine(AppContext.BaseDirectory, "Fixtures", "plan_valid_full.json");
+
+            var result = await RunCliAsync("apply", "--archive", path, "--field", "md1stin", "--plan", plan, "--dry-run");
+
+            result.ExitCode.Should().Be(0, result.StdOut + result.StdErr);
+            result.StdOut.Should().Contain("Changes to the field:").And.Contain("Dry run: nothing was written.");
+            File.ReadAllBytes(path).Should().Equal(before);
+            SafeArchiveWriter.ListBackups(path).Should().BeEmpty();
+        }
+        finally { DeleteArchive(path); }
+    }
+
+    [Fact]
+    public async Task apply_writes_dialogue_with_backup_and_restore_reverts_it()
+    {
+        var path = CreateArchive(("md1stin", FieldPC.CreateEmpty("md1stin").SaveCompressed()));
+        var before = File.ReadAllBytes(path);
+        try
+        {
+            var plan = Path.Combine(AppContext.BaseDirectory, "Fixtures", "plan_valid_full.json");
+
+            var apply = await RunCliAsync("apply", "--archive", path, "--field", "md1stin", "--plan", plan);
+
+            apply.ExitCode.Should().Be(0, apply.StdOut + apply.StdErr);
+            apply.StdOut.Should().Contain("Written. Backup:");
+            var field = FieldArchive.Open(path).OpenField("md1stin");
+            field.ScriptsAndTexts!.TextCount.Should().BeGreaterThan(2);
+            SafeArchiveWriter.ListBackups(path).Should().HaveCount(1);
+
+            var list = await RunCliAsync("restore", "--archive", path, "--list");
+            list.StdOut.Should().Contain(".mr-backup-");
+
+            var restore = await RunCliAsync("restore", "--archive", path);
+            restore.ExitCode.Should().Be(0, restore.StdErr);
+            File.ReadAllBytes(path).Should().Equal(before);
+        }
+        finally { DeleteArchive(path); }
+    }
+
+    [Fact]
+    public async Task apply_refuses_a_plan_with_validation_errors_and_leaves_the_archive_alone()
+    {
+        var path = CreateArchive(("md1stin", FieldPC.CreateEmpty("md1stin").SaveCompressed()));
+        var before = File.ReadAllBytes(path);
+        try
+        {
+            var plan = Path.Combine(AppContext.BaseDirectory, "Fixtures", "plan_invalid_missing_actor.json");
+
+            var result = await RunCliAsync("apply", "--archive", path, "--field", "md1stin", "--plan", plan);
+
+            result.ExitCode.Should().Be(2);
+            result.StdErr.Should().Contain("validation errors");
+            File.ReadAllBytes(path).Should().Equal(before);
+            SafeArchiveWriter.ListBackups(path).Should().BeEmpty();
+        }
+        finally { DeleteArchive(path); }
+    }
+
+    [Fact]
+    public async Task apply_rejects_unknown_walkmesh_mode_and_missing_plan()
+    {
+        var path = CreateArchive(("md1stin", FieldPC.CreateEmpty("md1stin").SaveCompressed()));
+        try
+        {
+            var plan = Path.Combine(AppContext.BaseDirectory, "Fixtures", "plan_valid_full.json");
+
+            var badMode = await RunCliAsync("apply", "--archive", path, "--field", "md1stin", "--plan", plan, "--walkmesh-mode", "bogus");
+            var noPlan = await RunCliAsync("apply", "--archive", path, "--field", "md1stin", "--plan", "nope.json");
+
+            badMode.ExitCode.Should().Be(1);
+            badMode.StdErr.Should().Contain("--walkmesh-mode");
+            noPlan.ExitCode.Should().Be(1);
+            noPlan.StdErr.Should().Contain("File not found");
+        }
+        finally { DeleteArchive(path); }
+    }
+
+    private static void DeleteArchive(string path)
+    {
+        File.Delete(path);
+        var directory = Path.GetDirectoryName(path)!;
+        foreach (var leftover in Directory.GetFiles(directory, Path.GetFileName(path) + ".*"))
+            File.Delete(leftover);
+    }
+
     private static string CreateArchive(params (string Name, byte[] Data)[] files)
     {
         var path = Path.Combine(Path.GetTempPath(), $"mr_inspect_{Guid.NewGuid():N}.lgp");

@@ -95,35 +95,78 @@ public sealed class SceneGenerationService : IDisposable
     /// errors, the model is re-prompted with the exact errors up to
     /// <see cref="LLMConfig.MaxRepairAttempts"/> times.
     /// </summary>
-    public async Task<SceneGenerationResult> GenerateAsync(ScenePrompt prompt, Field? field = null,
-                                                           int widthPx = 320, int heightPx = 240)
+    /// <param name="progress">Optional progress sink (phase changes, repair attempts, backend progress lines).</param>
+    public Task<SceneGenerationResult> GenerateAsync(ScenePrompt prompt, Field? field = null,
+                                                     int widthPx = 320, int heightPx = 240,
+                                                     IProgress<LLMProgressEvent>? progress = null)
     {
         var request = BuildRequest(prompt, widthPx, heightPx, field);
+        return RunWithRepairsAsync(request, field, progress);
+    }
+
+    /// <summary>
+    /// Ask the model to change an existing plan ("make the blacksmith angrier", "add a battle at the end").
+    /// The previous plan JSON and the instruction are sent together with the original constraints, and the
+    /// result goes through the same parse/validate/repair loop as <see cref="GenerateAsync"/>.
+    /// </summary>
+    /// <param name="previous">A successful earlier result; its <see cref="SceneGenerationResult.RawJson"/> is refined.</param>
+    /// <param name="instruction">What to change, in plain language.</param>
+    /// <param name="originalPrompt">The prompt that produced <paramref name="previous"/> (keeps its flags and text).</param>
+    public Task<SceneGenerationResult> RefineAsync(SceneGenerationResult previous, string instruction,
+                                                   ScenePrompt originalPrompt, Field? field = null,
+                                                   int widthPx = 320, int heightPx = 240,
+                                                   IProgress<LLMProgressEvent>? progress = null)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        ArgumentNullException.ThrowIfNull(originalPrompt);
+
+        if (string.IsNullOrWhiteSpace(instruction))
+            return Task.FromResult(SceneGenerationResult.Failure("Enter what should change in the scene."));
+        if (string.IsNullOrWhiteSpace(previous.RawJson))
+            return Task.FromResult(SceneGenerationResult.Failure("There is no previous plan to refine."));
+
+        var request = BuildRefineRequest(BuildRequest(originalPrompt, widthPx, heightPx, field), previous.RawJson, instruction);
+        return RunWithRepairsAsync(request, field, progress);
+    }
+
+    private async Task<SceneGenerationResult> RunWithRepairsAsync(LLMRequest request, Field? field,
+                                                                  IProgress<LLMProgressEvent>? progress)
+    {
         var maxRepairs = Math.Max(0, _config.MaxRepairAttempts);
         var attempts = new List<string>();
+        progress?.Report(new LLMProgressEvent(LLMProgressPhase.Starting));
 
         SceneGenerationResult? last = null;
         for (var attempt = 0; attempt <= maxRepairs; attempt++)
         {
-            var outcome = await RunOnceAsync(request, field);
+            var number = attempt + 1;
+            progress?.Report(new LLMProgressEvent(LLMProgressPhase.Waiting, string.Empty, number));
+            var outcome = await RunOnceAsync(request, field, progress, number);
             var problem = outcome.Problem;
             attempts.Add(problem);
 
             if (outcome.Transport)
+            {
+                progress?.Report(new LLMProgressEvent(LLMProgressPhase.Done, problem, number));
                 return SceneGenerationResult.Failure(problem, attempts: attempts);
+            }
 
             last = outcome.Result;
             if (problem.Length == 0)
                 break;
 
             if (attempt < maxRepairs)
+            {
+                progress?.Report(new LLMProgressEvent(LLMProgressPhase.Repairing, FirstLine(problem), number + 1));
                 request = BuildRepairRequest(request, outcome.PreviousOutput, problem);
+            }
         }
 
+        SceneGenerationResult result;
         if (last is { Plan: not null })
         {
             // Parsed but still invalid after all repairs: hand back the plan with its issues.
-            return new SceneGenerationResult
+            result = new SceneGenerationResult
             {
                 Ok = true,
                 RawJson = last.RawJson,
@@ -133,18 +176,33 @@ public sealed class SceneGenerationService : IDisposable
                 Attempts = attempts,
             };
         }
+        else
+        {
+            result = SceneGenerationResult.Failure(attempts[^1], last?.RawJson ?? string.Empty, attempts);
+        }
 
-        return SceneGenerationResult.Failure(attempts[^1], last?.RawJson ?? string.Empty, attempts);
+        progress?.Report(new LLMProgressEvent(LLMProgressPhase.Done, result.Ok ? string.Empty : result.Error, attempts.Count));
+        return result;
     }
 
     private sealed record Outcome(SceneGenerationResult? Result, string Problem, string PreviousOutput, bool Transport);
 
-    private async Task<Outcome> RunOnceAsync(LLMRequest request, Field? field)
+    private async Task<Outcome> RunOnceAsync(LLMRequest request, Field? field,
+                                             IProgress<LLMProgressEvent>? progress, int attempt)
     {
-        var raw = await _backend.RequestScenePlanAsync(request);
+        var raw = await _backend.RequestScenePlanAsync(request, progress);
         if (!raw.Ok)
-            return new Outcome(null, raw.Error, string.Empty, Transport: true);
+        {
+            // A reply that arrived but was not usable JSON carries the model's text and is worth repairing.
+            // Only a failure with nothing from the model (not logged in, timeout, no network) is final.
+            if (raw.Raw.Length == 0)
+                return new Outcome(null, raw.Error, string.Empty, Transport: true);
 
+            return new Outcome(SceneGenerationResult.Failure(raw.Error), raw.Error,
+                Encoding.UTF8.GetString(raw.Raw), Transport: false);
+        }
+
+        progress?.Report(new LLMProgressEvent(LLMProgressPhase.Parsing, string.Empty, attempt));
         var jsonBytes = LLMResponseExtractor.ExtractScenePlanJson(raw, out var extractError);
         if (jsonBytes == null)
         {
@@ -158,6 +216,7 @@ public sealed class SceneGenerationService : IDisposable
         if (!parsed.Ok)
             return new Outcome(SceneGenerationResult.Failure(parsed.Error, rawJson), parsed.Error, rawJson, Transport: false);
 
+        progress?.Report(new LLMProgressEvent(LLMProgressPhase.Validating, string.Empty, attempt));
         var layout = LayoutGenerator.Adjust(parsed.Plan, field);
         var validation = ScenePlanValidator.Validate(parsed.Plan, field);
 
@@ -176,6 +235,25 @@ public sealed class SceneGenerationService : IDisposable
         return new Outcome(result, problem, rawJson, Transport: false);
     }
 
+    private static string FirstLine(string text)
+    {
+        var index = text.IndexOf('\n');
+        return index < 0 ? text : text[..index];
+    }
+
+    /// <summary>Compose a refine request: original prompts, the current plan JSON and the change to make.</summary>
+    internal static LLMRequest BuildRefineRequest(LLMRequest original, string previousJson, string instruction)
+    {
+        var refinePrompt =
+            original.UserPrompt + "\n\n" +
+            "Current scene plan JSON:\n" + previousJson + "\n\n" +
+            "Refinement request:\n" + instruction.Trim() + "\n\n" +
+            "Apply the refinement to the current scene plan, keeping everything else unchanged. " +
+            "Return the complete updated JSON object only.";
+
+        return CopyWithUserPrompt(original, refinePrompt);
+    }
+
     /// <summary>
     /// Compose a repair request: the original prompts, the model's previous output and the
     /// exact errors to fix.
@@ -188,19 +266,21 @@ public sealed class SceneGenerationService : IDisposable
             "Fix instructions:\n" + errors + "\n\n" +
             "Return the corrected complete JSON object only.";
 
-        return new LLMRequest
-        {
-            EndpointUrl = original.EndpointUrl,
-            Model = original.Model,
-            ApiKey = original.ApiKey,
-            Temperature = original.Temperature,
-            MaxTokens = original.MaxTokens,
-            SystemPrompt = original.SystemPrompt,
-            UserPrompt = repairPrompt,
-            Stream = original.Stream,
-            TimeoutMs = original.TimeoutMs,
-        };
+        return CopyWithUserPrompt(original, repairPrompt);
     }
+
+    private static LLMRequest CopyWithUserPrompt(LLMRequest original, string userPrompt) => new()
+    {
+        EndpointUrl = original.EndpointUrl,
+        Model = original.Model,
+        ApiKey = original.ApiKey,
+        Temperature = original.Temperature,
+        MaxTokens = original.MaxTokens,
+        SystemPrompt = original.SystemPrompt,
+        UserPrompt = userPrompt,
+        Stream = original.Stream,
+        TimeoutMs = original.TimeoutMs,
+    };
 
     /// <summary>Cancel all in-flight requests.</summary>
     public void CancelAll() => _backend.CancelAll();

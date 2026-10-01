@@ -362,9 +362,16 @@ public sealed class FieldArchive
             throw new NotSupportedException("Use SaveField(FieldPS) to save PlayStation DAT fields.");
 
         if (_archive != null)
+        {
+            // Keep a rotating, timestamped copy of the pre-save archive; the .bak written by the LGP
+            // rewrite only ever holds the previous save.
+            SafeArchiveWriter.BackupArchive(ArchivePath);
             _archive.WriteFile(field.Name, field.SaveCompressed(), cancellationToken);
+        }
         else
+        {
             File.WriteAllBytes(ResolveLooseDirectoryPath(field.Name), field.SaveCompressed());
+        }
         cancellationToken.ThrowIfCancellationRequested();
         field.SetSaved();
         RefreshLooseDirectoryEntries();

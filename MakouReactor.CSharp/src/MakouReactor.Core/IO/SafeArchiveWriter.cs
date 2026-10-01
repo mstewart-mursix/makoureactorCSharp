@@ -74,6 +74,19 @@ public static class SafeArchiveWriter
         return new SafeWriteResult(backupPath, pruned);
     }
 
+    /// <summary>
+    /// Takes a timestamped backup of the archive as it is now and prunes old ones. Used before in-place
+    /// saves so the pre-edit archive survives repeated saves (a plain <c>.bak</c> is overwritten each time).
+    /// </summary>
+    /// <returns>The backup path.</returns>
+    public static string BackupArchive(string archivePath, int keepBackups = DefaultKeepBackups, DateTime? nowUtc = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(archivePath);
+        var backupPath = CreateBackup(archivePath, nowUtc ?? DateTime.UtcNow);
+        Prune(archivePath, keepBackups);
+        return backupPath;
+    }
+
     /// <summary>Lists backups of <paramref name="archivePath"/>, newest first.</summary>
     public static IReadOnlyList<ArchiveBackup> ListBackups(string archivePath)
     {

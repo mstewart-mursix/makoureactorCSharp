@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using MakouReactor.AI;
 using MakouReactor.AI.Backends;
 using MakouReactor.AI.Config;
+using MakouReactor.AI.Mapping;
 using MakouReactor.AI.Parsing;
 using MakouReactor.AI.Validation;
 using MakouReactor.Core.IO;
@@ -29,6 +30,8 @@ public static class Program
         root.AddCommand(BuildValidateCommand());
         root.AddCommand(BuildDoctorCommand());
         root.AddCommand(BuildInspectCommand());
+        root.AddCommand(BuildApplyCommand());
+        root.AddCommand(BuildRestoreCommand());
         return await root.InvokeAsync(args);
     }
 
@@ -302,6 +305,132 @@ public static class Program
         output.WriteLine($"Result: {fields.Count - failedFields - partialFields} ok, " +
                          $"{partialFields} with section errors, {failedFields} failed");
         return failedFields + partialFields == 0 ? 0 : 2;
+    }
+
+    // -----------------------------------------------------------------------
+    // apply / restore
+    // -----------------------------------------------------------------------
+
+    private static Command BuildApplyCommand()
+    {
+        var archiveOpt = new Option<string>("--archive", "flevel.lgp to modify") { IsRequired = true };
+        var fieldOpt = new Option<string>("--field", "Field inside the archive") { IsRequired = true };
+        var planOpt = new Option<string>("--plan", "Scene-plan JSON produced by 'generate'") { IsRequired = true };
+        var dryRunOpt = new Option<bool>("--dry-run", "Print what would change without writing anything");
+        var walkmeshOpt = new Option<string>("--walkmesh-mode", () => "ignore", "ignore | merge | replace");
+        var cmd = new Command("apply", "Apply a scene plan to a field (backup, verify, atomic replace)");
+        cmd.AddOption(archiveOpt);
+        cmd.AddOption(fieldOpt);
+        cmd.AddOption(planOpt);
+        cmd.AddOption(dryRunOpt);
+        cmd.AddOption(walkmeshOpt);
+
+        cmd.SetHandler((InvocationContext ctx) =>
+        {
+            var parse = ctx.ParseResult;
+            ctx.ExitCode = Apply(
+                parse.GetValueForOption(archiveOpt)!,
+                parse.GetValueForOption(fieldOpt)!,
+                parse.GetValueForOption(planOpt)!,
+                parse.GetValueForOption(dryRunOpt),
+                parse.GetValueForOption(walkmeshOpt)!,
+                Console.Out,
+                Console.Error);
+        });
+
+        return cmd;
+    }
+
+    /// <summary>Returns 0 on success, 1 for usage/IO problems, 2 for a plan that fails validation.</summary>
+    internal static int Apply(string archive, string field, string planPath, bool dryRun, string walkmeshMode,
+                              TextWriter output, TextWriter error)
+    {
+        if (!Enum.TryParse<WalkmeshMode>(walkmeshMode, ignoreCase: true, out var mode))
+        {
+            error.WriteLine($"Unknown --walkmesh-mode '{walkmeshMode}' (use ignore, merge or replace).");
+            return 1;
+        }
+
+        if (!File.Exists(planPath))
+        {
+            error.WriteLine($"File not found: {planPath}");
+            return 1;
+        }
+
+        var parsed = ScenePlanParser.Parse(File.ReadAllBytes(planPath));
+        if (!parsed.Ok)
+        {
+            error.WriteLine($"Parse failed: {parsed.Error}");
+            return 1;
+        }
+
+        var outcome = ScenePlanApplier.ApplyToArchive(archive, field, parsed.Plan, dryRun, mode);
+        if (outcome.Validation != null)
+        {
+            foreach (var issue in outcome.Validation.Issues)
+                error.WriteLine($"  {issue}");
+        }
+
+        if (!outcome.Ok)
+        {
+            error.WriteLine(outcome.Error);
+            return outcome.Validation?.HasErrors == true ? 2 : 1;
+        }
+
+        foreach (var note in outcome.Layout?.Notes ?? [])
+            output.WriteLine($"layout: {note}");
+
+        output.WriteLine(outcome.Summary);
+        if (outcome.DryRun)
+        {
+            output.WriteLine("Dry run: nothing was written.");
+        }
+        else if (outcome.Write != null)
+        {
+            output.WriteLine($"Written. Backup: {outcome.Write.BackupPath}");
+            if (outcome.Write.PrunedBackups > 0)
+                output.WriteLine($"Pruned {outcome.Write.PrunedBackups} old backup(s).");
+        }
+
+        return 0;
+    }
+
+    private static Command BuildRestoreCommand()
+    {
+        var archiveOpt = new Option<string>("--archive", "flevel.lgp to restore") { IsRequired = true };
+        var listOpt = new Option<bool>("--list", "List backups instead of restoring");
+        var cmd = new Command("restore", "Restore the newest backup made by 'apply' (or list backups)");
+        cmd.AddOption(archiveOpt);
+        cmd.AddOption(listOpt);
+
+        cmd.SetHandler((InvocationContext ctx) =>
+        {
+            var archive = ctx.ParseResult.GetValueForOption(archiveOpt)!;
+            if (ctx.ParseResult.GetValueForOption(listOpt))
+            {
+                var backups = SafeArchiveWriter.ListBackups(archive);
+                foreach (var backup in backups)
+                    Console.WriteLine($"{backup.CreatedUtc:yyyy-MM-dd HH:mm:ss}Z  {backup.Path}");
+                if (backups.Count == 0)
+                    Console.WriteLine("No backups found.");
+                ctx.ExitCode = 0;
+                return;
+            }
+
+            try
+            {
+                var restored = SafeArchiveWriter.RestoreLatestBackup(archive);
+                Console.WriteLine($"Restored {restored.Path} ({restored.CreatedUtc:yyyy-MM-dd HH:mm:ss}Z).");
+                ctx.ExitCode = 0;
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException)
+            {
+                Console.Error.WriteLine($"Restore failed: {ex.Message}");
+                ctx.ExitCode = 1;
+            }
+        });
+
+        return cmd;
     }
 
     // -----------------------------------------------------------------------

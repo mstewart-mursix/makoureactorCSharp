@@ -380,6 +380,27 @@ public class FieldArchiveTests
         File.Exists($"{archivePath}.bak").Should().BeTrue();
     }
 
+    [Fact]
+    public void save_field_keeps_timestamped_backups_so_the_original_survives_repeated_saves()
+    {
+        using var temp = new TempDirectory();
+        var archivePath = Path.Combine(temp.Path, "flevel.lgp");
+        LgpArchive.Create(archivePath, [new LgpArchiveFile("md1stin", FieldPC.CreateEmpty("md1stin").SaveCompressed())]);
+        var original = File.ReadAllBytes(archivePath);
+        var archive = FieldArchive.Open(archivePath);
+
+        for (var i = 0; i < 3; i++)
+        {
+            var field = archive.OpenField("md1stin");
+            field.InsertText(0, new FF7String($"edit {i}"));
+            archive.SaveField(field);
+        }
+
+        var backups = SafeArchiveWriter.ListBackups(archivePath);
+        backups.Should().HaveCount(3);
+        backups.Select(b => File.ReadAllBytes(b.Path)).Should().Contain(b => b.SequenceEqual(original));
+    }
+
     private static byte[] BuildMinimalPcField()
     {
         var sections = Enumerable.Range(1, 9)
