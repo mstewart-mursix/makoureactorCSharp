@@ -20,6 +20,12 @@ public sealed class LLMConfig
     /// <summary>Request timeout in milliseconds; 0 lets the caller pick a backend-appropriate default.</summary>
     public int TimeoutMs { get; init; }
 
+    /// <summary>
+    /// How many times the pipeline re-prompts the model with the exact parse/validation errors
+    /// when its output is unusable; 0 disables repair.
+    /// </summary>
+    public int MaxRepairAttempts { get; init; } = 1;
+
     // HTTP backend (OpenAI-compatible endpoint, e.g. LM Studio) — kept as an offline fallback.
     public string Endpoint { get; init; } = string.Empty;
     public string ApiKey { get; init; } = string.Empty;
@@ -55,6 +61,8 @@ public sealed class LLMConfig
                         CodexExecutable = GetStringOr(root, "codex_executable", "codex"),
                         CodexModel = GetStringOr(root, "codex_model", string.Empty),
                         TimeoutMs = root.TryGetProperty("timeout_ms", out var tm) && tm.ValueKind == JsonValueKind.Number ? tm.GetInt32() : 0,
+                        MaxRepairAttempts = root.TryGetProperty("max_repair_attempts", out var mr) && mr.ValueKind == JsonValueKind.Number
+                            ? Math.Max(0, mr.GetInt32()) : 1,
                         Endpoint = GetStringOr(root, "endpoint", string.Empty),
                         ApiKey = root.TryGetProperty("apiKey", out var ak) ? ak.GetString() ?? string.Empty
                                : GetStringOr(root, "api_key", string.Empty),

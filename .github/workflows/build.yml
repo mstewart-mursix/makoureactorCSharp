@@ -290,6 +290,22 @@ jobs:
         name: debian-artifacts-${{ matrix.config.name }}-${{matrix.config.arch}}
         path: makoureactor*.deb
 
+  csharp_build:
+    name: C# solution (build + test)
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Build (warnings are errors)
+      run: dotnet build MakouReactor.CSharp\MakouReactor.sln -c Release -warnaserror
+
+    - name: Test
+      run: dotnet test MakouReactor.CSharp\MakouReactor.sln -c Release --no-build
+
   pre_release_assets:
     name: Pre-Release
     needs: [main_build, deb_builder]

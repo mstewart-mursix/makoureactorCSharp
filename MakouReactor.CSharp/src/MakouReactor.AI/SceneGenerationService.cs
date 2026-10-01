@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -27,8 +29,15 @@ public sealed class SceneGenerationResult
     public LayoutResult? Layout { get; init; }
     public ValidationResult? Validation { get; init; }
 
-    public static SceneGenerationResult Failure(string error, string rawJson = "") =>
-        new() { Ok = false, Error = error, RawJson = rawJson };
+    /// <summary>
+    /// One entry per model call: an empty string when that attempt produced a usable plan,
+    /// otherwise the errors that triggered a repair (or the final failure).
+    /// </summary>
+    public IReadOnlyList<string> Attempts { get; init; } = Array.Empty<string>();
+
+    public static SceneGenerationResult Failure(string error, string rawJson = "",
+                                                IReadOnlyList<string>? attempts = null) =>
+        new() { Ok = false, Error = error, RawJson = rawJson, Attempts = attempts ?? new[] { error } };
 }
 
 /// <summary>
@@ -81,36 +90,114 @@ public sealed class SceneGenerationService : IDisposable
     /// <summary>
     /// Run the full pipeline. Nothing is written to any field; the caller decides
     /// whether to apply the returned plan via <see cref="Mapping.ScenePlanMapper"/>.
+    /// When the model's output cannot be extracted/parsed, or the plan has validation
+    /// errors, the model is re-prompted with the exact errors up to
+    /// <see cref="LLMConfig.MaxRepairAttempts"/> times.
     /// </summary>
     public async Task<SceneGenerationResult> GenerateAsync(ScenePrompt prompt, Field? field = null,
                                                            int widthPx = 320, int heightPx = 240)
     {
         var request = BuildRequest(prompt, widthPx, heightPx);
+        var maxRepairs = Math.Max(0, _config.MaxRepairAttempts);
+        var attempts = new List<string>();
 
+        SceneGenerationResult? last = null;
+        for (var attempt = 0; attempt <= maxRepairs; attempt++)
+        {
+            var outcome = await RunOnceAsync(request, field);
+            var problem = outcome.Problem;
+            attempts.Add(problem);
+
+            if (outcome.Transport)
+                return SceneGenerationResult.Failure(problem, attempts: attempts);
+
+            last = outcome.Result;
+            if (problem.Length == 0)
+                break;
+
+            if (attempt < maxRepairs)
+                request = BuildRepairRequest(request, outcome.PreviousOutput, problem);
+        }
+
+        if (last is { Plan: not null })
+        {
+            // Parsed but still invalid after all repairs: hand back the plan with its issues.
+            return new SceneGenerationResult
+            {
+                Ok = true,
+                RawJson = last.RawJson,
+                Plan = last.Plan,
+                Layout = last.Layout,
+                Validation = last.Validation,
+                Attempts = attempts,
+            };
+        }
+
+        return SceneGenerationResult.Failure(attempts[^1], last?.RawJson ?? string.Empty, attempts);
+    }
+
+    private sealed record Outcome(SceneGenerationResult? Result, string Problem, string PreviousOutput, bool Transport);
+
+    private async Task<Outcome> RunOnceAsync(LLMRequest request, Field? field)
+    {
         var raw = await _backend.RequestScenePlanAsync(request);
         if (!raw.Ok)
-            return SceneGenerationResult.Failure(raw.Error);
+            return new Outcome(null, raw.Error, string.Empty, Transport: true);
 
         var jsonBytes = LLMResponseExtractor.ExtractScenePlanJson(raw, out var extractError);
         if (jsonBytes == null)
-            return SceneGenerationResult.Failure(extractError);
+        {
+            var text = raw.Raw is { Length: > 0 } ? Encoding.UTF8.GetString(raw.Raw) : string.Empty;
+            return new Outcome(SceneGenerationResult.Failure(extractError), extractError, text, Transport: false);
+        }
 
         var rawJson = Encoding.UTF8.GetString(jsonBytes);
 
         var parsed = ScenePlanParser.Parse(jsonBytes);
         if (!parsed.Ok)
-            return SceneGenerationResult.Failure(parsed.Error, rawJson);
+            return new Outcome(SceneGenerationResult.Failure(parsed.Error, rawJson), parsed.Error, rawJson, Transport: false);
 
         var layout = LayoutGenerator.Adjust(parsed.Plan, field);
         var validation = ScenePlanValidator.Validate(parsed.Plan, field);
 
-        return new SceneGenerationResult
+        var result = new SceneGenerationResult
         {
             Ok = true,
             RawJson = rawJson,
             Plan = parsed.Plan,
             Layout = layout,
             Validation = validation
+        };
+
+        var problem = validation.HasErrors
+            ? string.Join("\n", validation.Issues.Where(i => i.Level == Severity.Error).Select(i => i.ToString()))
+            : string.Empty;
+        return new Outcome(result, problem, rawJson, Transport: false);
+    }
+
+    /// <summary>
+    /// Compose a repair request: the original prompts, the model's previous output and the
+    /// exact errors to fix.
+    /// </summary>
+    internal static LLMRequest BuildRepairRequest(LLMRequest original, string previousOutput, string errors)
+    {
+        var repairPrompt =
+            original.UserPrompt + "\n\n" +
+            "Your previous output:\n" + previousOutput + "\n\n" +
+            "Fix instructions:\n" + errors + "\n\n" +
+            "Return the corrected complete JSON object only.";
+
+        return new LLMRequest
+        {
+            EndpointUrl = original.EndpointUrl,
+            Model = original.Model,
+            ApiKey = original.ApiKey,
+            Temperature = original.Temperature,
+            MaxTokens = original.MaxTokens,
+            SystemPrompt = original.SystemPrompt,
+            UserPrompt = repairPrompt,
+            Stream = original.Stream,
+            TimeoutMs = original.TimeoutMs,
         };
     }
 

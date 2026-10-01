@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -136,5 +137,97 @@ public class SceneGenerationServiceTests
         var service = new SceneGenerationService(config, new FakeBackend(RawFrom(SceneJson)));
 
         service.BuildRequest(Prompt()).TimeoutMs.Should().Be(12_345);
+    }
+
+    private sealed class ScriptedBackend : ILLMBackend
+    {
+        private readonly Queue<LLMRawResult> _results;
+        public List<LLMRequest> Requests { get; } = new();
+
+        public ScriptedBackend(params LLMRawResult[] results) => _results = new Queue<LLMRawResult>(results);
+
+        public Task<LLMRawResult> RequestScenePlanAsync(LLMRequest req)
+        {
+            Requests.Add(req);
+            return Task.FromResult(_results.Count > 1 ? _results.Dequeue() : _results.Peek());
+        }
+
+        public void CancelAll() { }
+        public void Dispose() { }
+    }
+
+    [Fact]
+    public async Task repairs_unparseable_output_on_second_attempt()
+    {
+        var backend = new ScriptedBackend(RawFrom("{\"unexpected\":true}"), RawFrom(SceneJson));
+        var service = new SceneGenerationService(new LLMConfig { MaxRepairAttempts = 2 }, backend);
+
+        var result = await service.GenerateAsync(Prompt());
+
+        result.Ok.Should().BeTrue(result.Error);
+        result.Attempts.Should().HaveCount(2);
+        result.Attempts[0].Should().Contain("meta");
+        result.Attempts[1].Should().BeEmpty();
+        backend.Requests[1].UserPrompt.Should().Contain("Fix instructions:")
+            .And.Contain(result.Attempts[0])
+            .And.Contain("unexpected")
+            .And.EndWith("Return the corrected complete JSON object only.");
+    }
+
+    [Fact]
+    public async Task fails_with_last_error_after_max_repair_attempts()
+    {
+        var backend = new ScriptedBackend(RawFrom("{\"unexpected\":true}"));
+        var service = new SceneGenerationService(new LLMConfig { MaxRepairAttempts = 2 }, backend);
+
+        var result = await service.GenerateAsync(Prompt());
+
+        result.Ok.Should().BeFalse();
+        result.Attempts.Should().HaveCount(3);
+        backend.Requests.Should().HaveCount(3);
+        result.Error.Should().Contain("meta");
+    }
+
+    [Fact]
+    public async Task zero_repair_attempts_calls_backend_once()
+    {
+        var backend = new ScriptedBackend(RawFrom("{\"unexpected\":true}"));
+        var service = new SceneGenerationService(new LLMConfig { MaxRepairAttempts = 0 }, backend);
+
+        var result = await service.GenerateAsync(Prompt());
+
+        result.Ok.Should().BeFalse();
+        backend.Requests.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task transport_failure_is_not_retried()
+    {
+        var backend = new ScriptedBackend(LLMRawResult.Failure(0, "not logged in"));
+        var service = new SceneGenerationService(new LLMConfig { MaxRepairAttempts = 2 }, backend);
+
+        var result = await service.GenerateAsync(Prompt());
+
+        result.Ok.Should().BeFalse();
+        backend.Requests.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task validation_errors_trigger_repair_then_return_plan_with_issues_if_unfixed()
+    {
+        const string badJson =
+            "{\"meta\":{\"title\":\"X\",\"model\":\"fake\",\"version\":\"1.0\"}," +
+            "\"actors\":[{\"id\":\"cloud\"}]," +
+            "\"dialog\":[{\"speakerId\":\"ghost\",\"text\":\"Boo\"}]}";
+        var backend = new ScriptedBackend(RawFrom(badJson));
+        var service = new SceneGenerationService(new LLMConfig { MaxRepairAttempts = 1 }, backend);
+
+        var result = await service.GenerateAsync(Prompt());
+
+        backend.Requests.Should().HaveCount(2);
+        backend.Requests[1].UserPrompt.Should().Contain("ghost");
+        result.Ok.Should().BeTrue();
+        result.Validation!.HasErrors.Should().BeTrue();
+        result.Attempts.Should().HaveCount(2);
     }
 }

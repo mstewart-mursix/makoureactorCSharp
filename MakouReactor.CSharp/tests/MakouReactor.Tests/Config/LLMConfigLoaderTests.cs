@@ -23,6 +23,7 @@ public class LLMConfigLoaderTests
         config.Endpoint.Should().Be("http://localhost:1234/v1/chat/completions");
         config.ApiKey.Should().Be("lm-studio");
         config.Model.Should().Be("qwen/qwen3-coder-30b");
+        config.MaxRepairAttempts.Should().Be(1);
     }
 
     [Fact]
@@ -35,7 +36,8 @@ public class LLMConfigLoaderTests
   ""backend"": ""codex"",
   ""codex_executable"": ""C:\\tools\\codex.cmd"",
   ""codex_model"": ""gpt-5-codex"",
-  ""timeout_ms"": 120000
+  ""timeout_ms"": 120000,
+  ""max_repair_attempts"": 3
 }";
             File.WriteAllText(tempFile, json);
 
@@ -45,6 +47,8 @@ public class LLMConfigLoaderTests
             config.CodexExecutable.Should().Be(@"C:\tools\codex.cmd");
             config.CodexModel.Should().Be("gpt-5-codex");
             config.TimeoutMs.Should().Be(120000);
+            config.MaxRepairAttempts.Should().Be(3);
+            LLMConfig.Load(tempFile).MaxRepairAttempts.Should().Be(3);
         }
         finally
         {

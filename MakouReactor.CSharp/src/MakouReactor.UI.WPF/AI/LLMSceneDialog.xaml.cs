@@ -41,6 +41,7 @@ public partial class LLMSceneDialog : Window
             CodexExecutable = settings.Llm.CodexExecutable,
             CodexModel = settings.Llm.CodexModel,
             TimeoutMs = settings.Llm.TimeoutMs,
+            MaxRepairAttempts = Math.Max(0, settings.Llm.RepairAttempts),
             Endpoint = settings.Llm.Endpoint,
             ApiKey = settings.Llm.ApiKey,
             Model = settings.Llm.Model,
