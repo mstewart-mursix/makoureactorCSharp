@@ -185,6 +185,31 @@ public sealed class SceneGenerationService : IDisposable
         return result;
     }
 
+    /// <summary>
+    /// Re-analyse stored plan JSON (for example a history entry) against the current field: parse, lay out and
+    /// validate, without calling the model.
+    /// </summary>
+    public static SceneGenerationResult FromJson(string json, Field? field = null)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return SceneGenerationResult.Failure("No plan JSON to load.");
+
+        var bytes = Encoding.UTF8.GetBytes(json);
+        var parsed = ScenePlanParser.Parse(bytes);
+        if (!parsed.Ok)
+            return SceneGenerationResult.Failure(parsed.Error, json);
+
+        return new SceneGenerationResult
+        {
+            Ok = true,
+            RawJson = json,
+            Plan = parsed.Plan,
+            Layout = LayoutGenerator.Adjust(parsed.Plan, field),
+            Validation = ScenePlanValidator.Validate(parsed.Plan, field),
+            Attempts = new[] { string.Empty },
+        };
+    }
+
     private sealed record Outcome(SceneGenerationResult? Result, string Problem, string PreviousOutput, bool Transport);
 
     private async Task<Outcome> RunOnceAsync(LLMRequest request, Field? field,

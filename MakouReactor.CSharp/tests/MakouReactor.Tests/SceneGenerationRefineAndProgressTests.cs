@@ -183,4 +183,23 @@ public class SceneGenerationRefineAndProgressTests
         refined.Ok.Should().BeFalse();
         refined.Error.Should().Contain("no previous plan");
     }
+
+    [Fact]
+    public void from_json_reanalyses_stored_plans_without_a_backend()
+    {
+        var result = SceneGenerationService.FromJson(SceneJson, new MeshField("f", MeshField.Square(0, 100)));
+
+        result.Ok.Should().BeTrue(result.Error);
+        result.Plan!.Actors.Should().ContainSingle(a => a.Id == "cloud");
+        result.Validation.Should().NotBeNull();
+        result.Layout.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("{\"unexpected\":true}")]
+    public void from_json_fails_for_empty_or_invalid_plans(string json)
+    {
+        SceneGenerationService.FromJson(json).Ok.Should().BeFalse();
+    }
 }
