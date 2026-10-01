@@ -113,6 +113,12 @@ public sealed class LayoutOptions
 {
     public int MinDistancePx { get; init; } = 24;
     public bool EnableWalkmeshSnap { get; init; }
+
+    /// <summary>
+    /// When the field has a walkmesh, move spawn point, props and actors that fall outside it onto the
+    /// nearest walkable point, and keep overlap nudging on walkable ground. Ignored without a walkmesh.
+    /// </summary>
+    public bool ConstrainToWalkmesh { get; init; } = true;
     public int NudgeStepPx { get; init; } = 8;
     public int MaxNudgeTries { get; init; } = 200;
 }

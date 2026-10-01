@@ -65,7 +65,7 @@ public sealed class SceneGenerationService : IDisposable
     /// <summary>
     /// Compose the <see cref="LLMRequest"/> for a scene prompt without sending it.
     /// </summary>
-    public LLMRequest BuildRequest(ScenePrompt prompt, int widthPx = 320, int heightPx = 240)
+    public LLMRequest BuildRequest(ScenePrompt prompt, int widthPx = 320, int heightPx = 240, Field? field = null)
     {
         var isCodex = _config.Backend != "http";
         var model = isCodex ? _config.CodexModel : _config.Model;
@@ -82,7 +82,8 @@ public sealed class SceneGenerationService : IDisposable
             Temperature = prompt.Temperature,
             MaxTokens = prompt.MaxTokens,
             SystemPrompt = PromptBuilder.SystemPrompt(),
-            UserPrompt = PromptBuilder.UserPrompt(prompt, widthPx, heightPx),
+            UserPrompt = PromptBuilder.UserPrompt(prompt, widthPx, heightPx,
+                field is null ? null : FieldContextBuilder.Describe(field)),
             TimeoutMs = timeout
         };
     }
@@ -97,7 +98,7 @@ public sealed class SceneGenerationService : IDisposable
     public async Task<SceneGenerationResult> GenerateAsync(ScenePrompt prompt, Field? field = null,
                                                            int widthPx = 320, int heightPx = 240)
     {
-        var request = BuildRequest(prompt, widthPx, heightPx);
+        var request = BuildRequest(prompt, widthPx, heightPx, field);
         var maxRepairs = Math.Max(0, _config.MaxRepairAttempts);
         var attempts = new List<string>();
 

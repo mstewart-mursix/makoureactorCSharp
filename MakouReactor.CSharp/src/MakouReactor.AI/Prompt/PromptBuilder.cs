@@ -75,7 +75,7 @@ public static class PromptBuilder
     /// <summary>
     /// Build the user prompt from a <see cref="ScenePrompt"/> and field size hints.
     /// </summary>
-    public static string UserPrompt(ScenePrompt p, int widthPx, int heightPx)
+    public static string UserPrompt(ScenePrompt p, int widthPx, int heightPx, string? fieldContext = null)
     {
         var lines = new System.Collections.Generic.List<string>();
 
@@ -91,6 +91,15 @@ public static class PromptBuilder
         lines.Add($"- Field size hint (px): width={widthPx}, height={heightPx}");
         lines.Add("- Avoid overlapping placements; respect basic walkable regions if mentioned.");
         lines.Add("- Keep result coherent and lore-friendly.");
+        if (!string.IsNullOrWhiteSpace(fieldContext))
+        {
+            lines.Add(string.Empty);
+            lines.Add("Field Context:");
+            lines.Add(fieldContext.Trim());
+            lines.Add("Place all positions inside the walkable region described above. " +
+                      "Do not reuse existing group names.");
+        }
+
         lines.Add(string.Empty);
         lines.Add(SchemaText());
 

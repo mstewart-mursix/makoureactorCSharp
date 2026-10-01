@@ -16,13 +16,13 @@ public static class LayoutGenerator
     // -----------------------------------------------------------------------
 
     /// <summary>
-    /// Compute field pixel bounds; falls back to 320x240 if unavailable.
-    /// NOTE: Abstract Field has no Bounds property, so we always use the default.
+    /// Compute the placement bounds: the walkmesh bounding box when the field has a walkmesh,
+    /// otherwise the default 320x240 FF7 field resolution.
     /// </summary>
     public static Rect FieldBounds(Field? field)
     {
-        // The abstract Field class has no Bounds property; use default FF7 resolution.
-        return new Rect(0, 0, 320, 240);
+        var mesh = WalkmeshGeometry.From(field);
+        return mesh?.Bounds ?? new Rect(0, 0, 320, 240);
     }
 
     /// <summary>
@@ -37,6 +37,8 @@ public static class LayoutGenerator
         var enableWalkmeshSnap = opts?.EnableWalkmeshSnap ?? false;
         var nudgeStepPx = opts?.NudgeStepPx ?? 8;
         var maxNudgeTries = opts?.MaxNudgeTries ?? 200;
+        var mesh = (opts?.ConstrainToWalkmesh ?? true) ? WalkmeshGeometry.From(field) : null;
+        Func<Point, bool>? walkable = mesh is null ? null : mesh.Contains;
 
         // Ensure Layout exists
         if (plan.Layout == null)
@@ -53,6 +55,13 @@ public static class LayoutGenerator
             notes.Add($"Clamped spawnPoint from {before.X},{before.Y} to {plan.Layout.SpawnPoint.X},{plan.Layout.SpawnPoint.Y}");
         }
 
+        if (mesh is not null && !mesh.Contains(plan.Layout.SpawnPoint))
+        {
+            var before = plan.Layout.SpawnPoint;
+            plan.Layout.SpawnPoint = mesh.Nearest(before);
+            notes.Add($"Moved spawnPoint from {before.X},{before.Y} onto walkmesh at {plan.Layout.SpawnPoint.X},{plan.Layout.SpawnPoint.Y}");
+        }
+
         // --- Clamp props and record as obstacles ---
         var obstacles = new List<Point>();
         var props = plan.Layout.Props;
@@ -67,6 +76,12 @@ public static class LayoutGenerator
                     prop.Position = ClampPoint(prop.Position, bounds);
                     notes.Add($"Clamped prop '{prop.Id}' from {before.X},{before.Y} to {prop.Position.X},{prop.Position.Y}");
                 }
+                if (mesh is not null && !mesh.Contains(prop.Position))
+                {
+                    var before = prop.Position;
+                    prop.Position = mesh.Nearest(before);
+                    notes.Add($"Moved prop '{prop.Id}' from {before.X},{before.Y} onto walkmesh at {prop.Position.X},{prop.Position.Y}");
+                }
                 obstacles.Add(prop.Position);
             }
         }
@@ -79,7 +94,7 @@ public static class LayoutGenerator
                 var before = plan.Layout.SpawnPoint;
                 var obstacleList = new List<Point>(obstacles);
                 plan.Layout.SpawnPoint = NudgeToFree(plan.Layout.SpawnPoint, bounds, obstacleList,
-                    minDistancePx, nudgeStepPx, maxNudgeTries);
+                    minDistancePx, nudgeStepPx, maxNudgeTries, walkable);
                 notes.Add($"Nudged spawnPoint from {before.X},{before.Y} to {plan.Layout.SpawnPoint.X},{plan.Layout.SpawnPoint.Y} to avoid props");
                 break;
             }
@@ -113,6 +128,13 @@ public static class LayoutGenerator
                 }
             }
 
+            if (mesh is not null && !mesh.Contains(pos))
+            {
+                var before = pos;
+                pos = mesh.Nearest(before);
+                notes.Add($"Moved actor '{actor.Id}' from {before.X},{before.Y} onto walkmesh at {pos.X},{pos.Y}");
+            }
+
             // Avoid overlaps with already placed actors, props, and spawn
             var occupied = new List<Point>(placed.Count + obstacles.Count + 1);
             occupied.AddRange(placed);
@@ -120,7 +142,7 @@ public static class LayoutGenerator
             occupied.Add(plan.Layout.SpawnPoint);
 
             var freePos = NudgeToFree(pos, bounds, occupied,
-                minDistancePx, nudgeStepPx, maxNudgeTries);
+                minDistancePx, nudgeStepPx, maxNudgeTries, walkable);
 
             if (freePos != pos)
                 notes.Add($"Nudged actor '{actor.Id}' from {pos.X},{pos.Y} to {freePos.X},{freePos.Y} to avoid overlaps");
@@ -161,7 +183,8 @@ public static class LayoutGenerator
     /// and within <paramref name="bounds"/>.
     /// </summary>
     private static Point NudgeToFree(Point start, Rect bounds, List<Point> placed,
-                                     int minDist, int step, int maxTries)
+                                     int minDist, int step, int maxTries,
+                                     Func<Point, bool>? allowed = null)
     {
         var minDist2 = (double)minDist * minDist;
 
@@ -170,7 +193,7 @@ public static class LayoutGenerator
             foreach (var q in placed)
                 if (DistSq(pt, q) < minDist2)
                     return false;
-            return bounds.Contains(pt);
+            return bounds.Contains(pt) && (allowed?.Invoke(pt) ?? true);
         }
 
         if (IsFree(start))

@@ -43,6 +43,8 @@ public static class Program
         var widthOpt = new Option<int>("--width", () => 320, "Field width hint in pixels");
         var heightOpt = new Option<int>("--height", () => 240, "Field height hint in pixels");
         var outOpt = new Option<string?>("--out", "Write the generated scene-plan JSON to this file (default: stdout)");
+        var archiveOpt = new Option<string?>("--archive", "flevel.lgp to read field context from (use with --field)");
+        var fieldOpt = new Option<string?>("--field", "Field name inside --archive to describe to the model");
         var dryRunOpt = new Option<bool>("--dry-run", "Print the composed prompt without calling the LLM");
         var noDialogOpt = new Option<bool>("--no-dialog", "Skip dialogue generation");
         var noLayoutOpt = new Option<bool>("--no-layout", "Skip layout generation");
@@ -54,6 +56,8 @@ public static class Program
         cmd.AddOption(widthOpt);
         cmd.AddOption(heightOpt);
         cmd.AddOption(outOpt);
+        cmd.AddOption(archiveOpt);
+        cmd.AddOption(fieldOpt);
         cmd.AddOption(dryRunOpt);
         cmd.AddOption(noDialogOpt);
         cmd.AddOption(noLayoutOpt);
@@ -75,11 +79,35 @@ public static class Program
             var width = parse.GetValueForOption(widthOpt);
             var height = parse.GetValueForOption(heightOpt);
 
+            Field? field = null;
+            var archivePath = parse.GetValueForOption(archiveOpt);
+            var fieldName = parse.GetValueForOption(fieldOpt);
+            if (archivePath != null || fieldName != null)
+            {
+                if (archivePath == null || fieldName == null)
+                {
+                    Console.Error.WriteLine("--archive and --field must be used together.");
+                    ctx.ExitCode = 1;
+                    return;
+                }
+
+                try
+                {
+                    field = FieldArchive.Open(archivePath).OpenField(fieldName);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Could not open field '{fieldName}': {ex.Message}");
+                    ctx.ExitCode = 1;
+                    return;
+                }
+            }
+
             using var service = new SceneGenerationService(config);
 
             if (parse.GetValueForOption(dryRunOpt))
             {
-                var request = service.BuildRequest(scenePrompt, width, height);
+                var request = service.BuildRequest(scenePrompt, width, height, field);
                 Console.WriteLine($"# Backend: {config.Backend}");
                 Console.WriteLine("# --- System prompt ---");
                 Console.WriteLine(request.SystemPrompt);
@@ -90,7 +118,7 @@ public static class Program
             }
 
             Console.Error.WriteLine($"Generating via '{config.Backend}' backend...");
-            var result = await service.GenerateAsync(scenePrompt, field: null, width, height);
+            var result = await service.GenerateAsync(scenePrompt, field, width, height);
 
             if (!result.Ok)
             {
@@ -99,6 +127,8 @@ public static class Program
                 return;
             }
 
+            if (result.Attempts.Count > 1 && result.Attempts[^1].Length == 0)
+                Console.Error.WriteLine($"Succeeded after {result.Attempts.Count - 1} repair attempt(s).");
             PrintIssues(result.Validation!);
 
             var outPath = parse.GetValueForOption(outOpt);

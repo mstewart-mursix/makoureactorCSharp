@@ -230,4 +230,26 @@ public class SceneGenerationServiceTests
         result.Validation!.HasErrors.Should().BeTrue();
         result.Attempts.Should().HaveCount(2);
     }
+
+    [Fact]
+    public async Task generate_sends_field_context_to_backend_when_field_given()
+    {
+        var backend = new FakeBackend(RawFrom(SceneJson));
+        var service = new SceneGenerationService(new LLMConfig(), backend);
+
+        await service.GenerateAsync(Prompt(), new MeshField("md1stin", MeshField.Square(0, 100)));
+
+        backend.LastRequest!.UserPrompt.Should().Contain("Field Context:").And.Contain("Field: md1stin");
+    }
+
+    [Fact]
+    public async Task generate_without_field_has_no_field_context()
+    {
+        var backend = new FakeBackend(RawFrom(SceneJson));
+        var service = new SceneGenerationService(new LLMConfig(), backend);
+
+        await service.GenerateAsync(Prompt());
+
+        backend.LastRequest!.UserPrompt.Should().NotContain("Field Context:");
+    }
 }
