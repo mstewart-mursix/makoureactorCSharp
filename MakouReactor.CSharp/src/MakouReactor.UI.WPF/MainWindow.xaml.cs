@@ -922,7 +922,10 @@ public partial class MainWindow : Window
                 $"Field '{openedField.Name}' loaded.\n\n" +
                 $"Decompressed size: {openedField.Data.Length:N0} bytes\n" +
                 $"Sections: {openedField.Sections.Count}\n\n" +
-                "Section 1 could not be parsed for this field.");
+                $"Section 1 could not be parsed for this field: " +
+                (openedField.SectionErrors.TryGetValue(FieldSection.Scripts, out var scriptsError)
+                    ? scriptsError
+                    : "unknown error."));
         }
 
         UpdatePreviewLabel();

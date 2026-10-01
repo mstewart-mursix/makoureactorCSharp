@@ -2,6 +2,7 @@ using System;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 using MakouReactor.AI;
@@ -9,6 +10,7 @@ using MakouReactor.AI.Backends;
 using MakouReactor.AI.Config;
 using MakouReactor.AI.Parsing;
 using MakouReactor.AI.Validation;
+using MakouReactor.Core.IO;
 using MakouReactor.Core.Models;
 
 namespace MakouReactor.CLI;
@@ -26,6 +28,7 @@ public static class Program
         root.AddCommand(BuildGenerateCommand());
         root.AddCommand(BuildValidateCommand());
         root.AddCommand(BuildDoctorCommand());
+        root.AddCommand(BuildInspectCommand());
         return await root.InvokeAsync(args);
     }
 
@@ -193,6 +196,82 @@ public static class Program
         });
 
         return cmd;
+    }
+
+    // -----------------------------------------------------------------------
+    // inspect
+    // -----------------------------------------------------------------------
+
+    private static Command BuildInspectCommand()
+    {
+        var archiveArg = new Argument<string>("archive", "Path to flevel.lgp (or another PC field LGP)");
+        var fieldOpt = new Option<string?>("--field", "Only inspect this field (default: every field)");
+        var cmd = new Command("inspect", "Open an archive and report exactly which fields/sections fail to parse");
+        cmd.AddArgument(archiveArg);
+        cmd.AddOption(fieldOpt);
+
+        cmd.SetHandler((InvocationContext ctx) =>
+        {
+            var path = ctx.ParseResult.GetValueForArgument(archiveArg);
+            var only = ctx.ParseResult.GetValueForOption(fieldOpt);
+            ctx.ExitCode = Inspect(path, only, Console.Out, Console.Error);
+        });
+
+        return cmd;
+    }
+
+    /// <summary>
+    /// Opens <paramref name="path"/> and writes a parse report. Returns 0 when everything
+    /// parsed, 1 when the archive cannot be opened, 2 when some field or section failed.
+    /// </summary>
+    internal static int Inspect(string path, string? onlyField, TextWriter output, TextWriter error)
+    {
+        FieldArchive archive;
+        try
+        {
+            archive = FieldArchive.Open(path);
+        }
+        catch (Exception ex)
+        {
+            error.WriteLine($"Archive open failed: {ex.GetType().Name}: {ex.Message}");
+            return 1;
+        }
+
+        output.WriteLine($"Archive: {path}");
+        output.WriteLine($"Entries: {archive.ArchiveEntries.Count}, fields: {archive.FieldEntries.Count}");
+
+        var fields = archive.FieldEntries
+            .Where(f => onlyField == null || f.Name.Equals(onlyField, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (onlyField != null && fields.Count == 0)
+        {
+            error.WriteLine($"Field not found: {onlyField}");
+            return 1;
+        }
+
+        int failedFields = 0, partialFields = 0;
+        foreach (var entry in fields)
+        {
+            try
+            {
+                var field = archive.OpenField(entry.Name);
+                if (field.SectionErrors.Count > 0)
+                {
+                    partialFields++;
+                    foreach (var (section, message) in field.SectionErrors)
+                        output.WriteLine($"  {entry.Name}: section {section} failed: {message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failedFields++;
+                output.WriteLine($"  {entry.Name}: FAILED to open: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        output.WriteLine($"Result: {fields.Count - failedFields - partialFields} ok, " +
+                         $"{partialFields} with section errors, {failedFields} failed");
+        return failedFields + partialFields == 0 ? 0 : 2;
     }
 
     // -----------------------------------------------------------------------
