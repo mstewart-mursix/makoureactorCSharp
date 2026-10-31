@@ -29,6 +29,8 @@ public sealed class ScenePreviewModelTests
             id.Triangles.Add(new Triangle(V(0, 0), V(1000, 400), V(0, 400)));
             Walkmesh = id;
         }
+
+        public MeshField(Section1File scripts) : this() => ScriptsAndTexts = scripts;
     }
 
     private static ScenePlan Plan()
@@ -79,6 +81,21 @@ public sealed class ScenePreviewModelTests
         scale.Should().BeApproximately(1.0, 1e-9);
         ox.Should().BeApproximately(12, 1e-9);
         oy.Should().BeApproximately((500 - 240) / 2.0, 1e-9);
+    }
+
+    [Fact]
+    public void existing_entities_come_from_constant_placements()
+    {
+        var section = new Section1File();
+        var npc = new GrpScript("aeris");
+        // CHAR 0, XYZI (constants) x=200 y=150 z=0 i=1, RET
+        npc.SetScript(0, new Script([0xA1, 0x00, 0xA5, 0x00, 0x00, 0xC8, 0x00, 0x96, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00]));
+        section.GrpScripts.Add(npc);
+
+        var withMesh = ScenePreviewModel.Build(new MeshField(section), null);
+
+        withMesh.ExistingEntities.Should().ContainSingle()
+            .Which.Should().Be(new PreviewPoint("aeris", new CorePoint(200, 150)));
     }
 
     [Fact]

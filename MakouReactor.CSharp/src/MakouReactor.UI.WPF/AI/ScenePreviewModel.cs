@@ -4,6 +4,7 @@ using System.Linq;
 
 using MakouReactor.AI.Layout;
 using MakouReactor.Core.Models;
+using MakouReactor.Core.Services;
 
 using Point = MakouReactor.Core.Models.Point;
 using Rect = MakouReactor.Core.Models.Rect;
@@ -28,6 +29,12 @@ public sealed class ScenePreviewModel
 {
     public IReadOnlyList<Point[]> Triangles { get; init; } = Array.Empty<Point[]>();
     public IReadOnlyList<PreviewLine> Exits { get; init; } = Array.Empty<PreviewLine>();
+
+    /// <summary>
+    /// The field's existing entities at their initial constant placements (drawn gray). Only filled
+    /// when the field has a walkmesh, because placements are field coordinates.
+    /// </summary>
+    public IReadOnlyList<PreviewPoint> ExistingEntities { get; init; } = Array.Empty<PreviewPoint>();
     public IReadOnlyList<PreviewActor> Actors { get; init; } = Array.Empty<PreviewActor>();
     public IReadOnlyList<PreviewPoint> Props { get; init; } = Array.Empty<PreviewPoint>();
     public IReadOnlyList<PreviewPoint> MoveTargets { get; init; } = Array.Empty<PreviewPoint>();
@@ -52,6 +59,12 @@ public sealed class ScenePreviewModel
             .Select(e => new PreviewLine(new Point(e.LineA.X, e.LineA.Y), new Point(e.LineB.X, e.LineB.Y), $"#{e.FieldId}"))
             .ToList() ?? new List<PreviewLine>();
 
+        var existing = walkmesh == null
+            ? new List<PreviewPoint>()
+            : FieldEntityLocator.Locate(field?.ScriptsAndTexts)
+                .Select(e => new PreviewPoint(e.GroupName, new Point(e.X, e.Y)))
+                .ToList();
+
         var actors = plan?.Actors.Select(a => new PreviewActor(a.Id, a.Position, OnMesh(a.Position))).ToList()
                      ?? new List<PreviewActor>();
         var props = plan?.Layout?.Props.Select(p => new PreviewPoint(p.Id, p.Position)).ToList()
@@ -65,6 +78,7 @@ public sealed class ScenePreviewModel
 
         var points = triangles.SelectMany(t => t)
             .Concat(exits.SelectMany(e => new[] { e.A, e.B }))
+            .Concat(existing.Select(e => e.Position))
             .Concat(actors.Select(a => a.Position))
             .Concat(props.Select(p => p.Position))
             .Concat(moves.Select(m => m.Position))
@@ -77,6 +91,7 @@ public sealed class ScenePreviewModel
         {
             Triangles = triangles,
             Exits = exits,
+            ExistingEntities = existing,
             Actors = actors,
             Props = props,
             MoveTargets = moves,

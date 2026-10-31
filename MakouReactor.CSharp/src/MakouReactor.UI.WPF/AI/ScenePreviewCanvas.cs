@@ -8,7 +8,7 @@ namespace MakouReactor.UI.WPF.AI;
 
 /// <summary>
 /// Top-down 2D preview of a scene plan on its field: walkmesh triangles (light fill), exit lines
-/// (gray), trigger zones (dashed), props (squares), move targets (small circles), spawn (star)
+/// (gray), existing entities (gray dots), trigger zones (dashed), props (squares), move targets (small circles), spawn (star)
 /// and planned actors (labelled dots; red when off the walkmesh).
 /// </summary>
 public sealed class ScenePreviewCanvas : FrameworkElement
@@ -17,6 +17,7 @@ public sealed class ScenePreviewCanvas : FrameworkElement
     private static readonly Brush MeshFill = Freeze(new SolidColorBrush(Color.FromRgb(0xDD, 0xEE, 0xDD)));
     private static readonly Pen MeshPen = Freeze(new Pen(new SolidColorBrush(Color.FromRgb(0xA8, 0xC8, 0xA8)), 0.5));
     private static readonly Pen ExitPen = Freeze(new Pen(Brushes.Gray, 2));
+    private static readonly Brush ExistingFill = Freeze(new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E)));
     private static readonly Pen ZonePen = Freeze(new Pen(Brushes.DarkOrange, 1.5) { DashStyle = DashStyles.Dash });
     private static readonly Brush PropFill = Freeze(new SolidColorBrush(Color.FromRgb(0x8D, 0x6E, 0x63)));
     private static readonly Brush ActorFill = Freeze(new SolidColorBrush(Color.FromRgb(0x1E, 0x88, 0xE5)));
@@ -65,6 +66,13 @@ public sealed class ScenePreviewCanvas : FrameworkElement
         {
             dc.DrawLine(ExitPen, Map(exit.A), Map(exit.B));
             DrawLabel(dc, exit.Label, Map(exit.A), Brushes.Gray);
+        }
+
+        foreach (var entity in _model.ExistingEntities)
+        {
+            var c = Map(entity.Position);
+            dc.DrawEllipse(ExistingFill, null, c, 4, 4);
+            DrawLabel(dc, entity.Label, c, ExistingFill);
         }
 
         foreach (var zone in _model.TriggerZones)
