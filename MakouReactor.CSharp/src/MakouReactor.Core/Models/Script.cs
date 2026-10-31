@@ -83,6 +83,63 @@ public sealed class Script
 
     public byte[] ToByteArray() => Compile();
 
+    /// <summary>
+    /// Splits raw script bytes into the init part (up to and including the first RET/RETTO that
+    /// is not skipped by a pending forward jump) and the main part, mirroring
+    /// <c>Script::splitScriptAtReturn()</c> in <c>src/core/field/Script.cpp</c>.
+    /// </summary>
+    /// <param name="scriptData">The raw bytes of file script 0.</param>
+    /// <returns>The init and main byte ranges; main is empty when no split point exists.</returns>
+    public static (byte[] Init, byte[] Main) SplitAtReturn(ReadOnlySpan<byte> scriptData)
+    {
+        var pendingTarget = -1;
+        foreach (var opcode in RawOpcodeReader.Read(scriptData))
+        {
+            // C++ inserts a LABEL before the opcode at a jump target; reaching it clears the jump.
+            if (pendingTarget >= 0 && opcode.Offset == pendingTarget)
+                pendingTarget = -1;
+
+            if (pendingTarget >= 0)
+                continue;
+
+            var forwardTarget = ForwardJumpTarget(opcode);
+            if (forwardTarget >= 0)
+            {
+                pendingTarget = forwardTarget;
+            }
+            else if (opcode.Id is 0x00 or 0x07) // RET, RETTO
+            {
+                var split = opcode.Offset + opcode.Size;
+                return (scriptData[..split].ToArray(), scriptData[split..].ToArray());
+            }
+        }
+
+        return (scriptData.ToArray(), []);
+    }
+
+    private static int ForwardJumpTarget(RawOpcode opcode)
+    {
+        var (shift, isLong) = opcode.Id switch
+        {
+            0x10 => (1, false),                 // JMPF
+            0x11 or 0x1B => (1, true),          // JMPFL, Unused1B
+            0x14 => (5, false),                 // IFUB
+            0x15 => (5, true),                  // IFUBL
+            0x16 or 0x18 => (7, false),         // IFSW, IFUW
+            0x17 or 0x19 => (7, true),          // IFSWL, IFUWL
+            0x30 or 0x31 or 0x32 => (3, false), // IFKEY, IFKEYON, IFKEYOFF
+            0xCB or 0xCC => (2, false),         // IFPRTYQ, IFMEMBQ
+            _ => (-1, false),
+        };
+        if (shift < 0)
+            return -1;
+
+        var bytes = opcode.Bytes;
+        int Read(int index) => index < bytes.Length ? bytes[index] : 0;
+        var jump = isLong ? Read(shift) | (Read(shift + 1) << 8) : Read(shift);
+        return opcode.Offset + shift + jump;
+    }
+
     public bool ReplaceRawOpcodeBytes(int offset, byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);

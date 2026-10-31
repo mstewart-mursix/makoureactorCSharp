@@ -81,17 +81,17 @@ public class Section1FileTests
         var data = BuildSection1WithRawText([0xA6, 0xA7, 0xFF]);
         var section = Section1File.Open(data);
 
-        section.Texts[0].Value.Should().Be("{xA6}{xA7}");
+        section.Texts[0].Value.Should().Be("∆«");
 
         section.SetJapaneseText(true);
 
         section.JapaneseText.Should().BeTrue();
-        section.Texts[0].Value.Should().Be("ｦｧ");
+        section.Texts[0].Value.Should().Be("ィぃ");
         section.IsModified.Should().BeFalse();
 
         section.SetJapaneseText(false);
 
-        section.Texts[0].Value.Should().Be("{xA6}{xA7}");
+        section.Texts[0].Value.Should().Be("∆«");
         section.IsModified.Should().BeFalse();
     }
 
@@ -375,12 +375,12 @@ public class Section1FileTests
         foreach (var text in texts)
         {
             writer.Write(offset);
-            offset += checked((ushort)(Encoding.ASCII.GetByteCount(text) + 1));
+            offset += checked((ushort)(FF7TextCodec.Encode(text, includeTerminator: false).Length + 1));
         }
 
         foreach (var text in texts)
         {
-            writer.Write(Encoding.ASCII.GetBytes(text));
+            writer.Write(FF7TextCodec.Encode(text, includeTerminator: false));
             writer.Write((byte)0xFF);
         }
 

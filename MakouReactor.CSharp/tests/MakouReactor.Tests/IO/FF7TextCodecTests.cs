@@ -11,66 +11,66 @@ public class FF7TextCodecTests
     [Fact]
     public void decode_stops_at_terminator()
     {
-        FF7TextCodec.Decode([0x48, 0x69, 0xFF, 0x21])
+        FF7TextCodec.Decode([0x28, 0x49, 0xFF, 0x21])
             .Should().Be("Hi");
     }
 
     [Fact]
     public void decode_names_known_control_tokens()
     {
-        FF7TextCodec.Decode([0x41, 0xED, 0x42, 0xFF])
-            .Should().Be("A{NEW}B");
+        FF7TextCodec.Decode([0x21, 0xE8, 0x22, 0xFF])
+            .Should().Be("A\n{NEW PAGE}\nB");
     }
 
     [Fact]
     public void encode_round_trips_unknown_hex_escapes()
     {
-        var encoded = FF7TextCodec.Encode("A{x01}{NEW}B");
+        var encoded = FF7TextCodec.Encode("A{x5F}\n{NEW PAGE}\nB");
 
-        encoded.Should().Equal([0x41, 0x01, 0xED, 0x42, 0xFF]);
-        FF7TextCodec.Decode(encoded).Should().Be("A{x01}{NEW}B");
+        encoded.Should().Equal([0x21, 0x5F, 0xE8, 0x22, 0xFF]);
+        FF7TextCodec.Decode(encoded).Should().Be("A{x5F}\n{NEW PAGE}\nB");
     }
 
     [Fact]
     public void decode_names_character_and_color_tokens()
     {
-        FF7TextCodec.Decode([0xD4, 0xEE, 0x20, 0xF0, 0xD9, 0xFF])
+        FF7TextCodec.Decode([0xFE, 0xD4, 0xEA, 0x00, 0xEC, 0xFE, 0xD9, 0xFF])
             .Should().Be("{RED}{CLOUD} {TIFA}{WHITE}");
     }
 
     [Fact]
     public void encode_accepts_text_manager_control_token_aliases()
     {
-        var encoded = FF7TextCodec.Encode("{NEW PAGE}{EOL}{AERIS}{CIRCLE}{CHOICE}");
+        var encoded = FF7TextCodec.Encode("{NEW PAGE}{AERIS}{CIRCLE}{CHOICE}");
 
-        encoded.Should().Equal([0xED, 0xED, 0xF1, 0xF6, 0xE0, 0xFF]);
+        encoded.Should().Equal([0xE8, 0xED, 0xF6, 0xE0, 0xFF]);
     }
 
     [Fact]
     public void encode_accepts_color_and_unknown_tokens()
     {
-        var encoded = FF7TextCodec.Encode("{BLUE}Hi{x03}{WHITE}");
+        var encoded = FF7TextCodec.Encode("{BLUE}Hi{xE5}{WHITE}");
 
-        encoded.Should().Equal([0xD3, 0x48, 0x69, 0x03, 0xD9, 0xFF]);
-        FF7TextCodec.Decode(encoded).Should().Be("{BLUE}Hi{x03}{WHITE}");
+        encoded.Should().Equal([0xFE, 0xD3, 0x28, 0x49, 0xE5, 0xFE, 0xD9, 0xFF]);
+        FF7TextCodec.Decode(encoded).Should().Be("{BLUE}Hi{xE5}{WHITE}");
     }
 
     [Fact]
-    public void japanese_mode_decodes_halfwidth_kana_bytes()
+    public void japanese_mode_decodes_japanese_table_bytes()
     {
-        FF7TextCodec.Decode([0xA6, 0xA7, 0xED, 0xFF], japanese: true)
-            .Should().Be("ｦｧ{NEW}");
-        FF7TextCodec.Decode([0xA6, 0xA7, 0xED, 0xFF])
-            .Should().Be("{xA6}{xA7}{NEW}");
+        FF7TextCodec.Decode([0x00, 0x01, 0xEA, 0xFF], japanese: true)
+            .Should().Be("バば{CLOUD}");
+        FF7TextCodec.Decode([0x00, 0x01, 0xEA, 0xFF])
+            .Should().Be(" !{CLOUD}");
     }
 
     [Fact]
-    public void encode_round_trips_japanese_halfwidth_kana()
+    public void encode_round_trips_japanese_text()
     {
-        var encoded = FF7TextCodec.Encode("ｦｧ{NEW}");
+        var encoded = FF7TextCodec.Encode("バば{CLOUD}", japanese: true);
 
-        encoded.Should().Equal([0xA6, 0xA7, 0xED, 0xFF]);
-        FF7TextCodec.Decode(encoded, japanese: true).Should().Be("ｦｧ{NEW}");
+        encoded.Should().Equal([0x00, 0x01, 0xEA, 0xFF]);
+        FF7TextCodec.Decode(encoded, japanese: true).Should().Be("バば{CLOUD}");
     }
 
     [Fact]

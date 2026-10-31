@@ -18,10 +18,9 @@ public sealed class FieldPC : Field
     private const int SectionCount = 9;
     private const int SectionSizeHeader = 4;
     private static readonly byte[] Footer = "FINAL FANTASY7"u8.ToArray();
-    private readonly byte[] _fieldData;
-    private readonly byte[]? _compressedData;
-    private readonly uint[] _sectionOffsets;
-    private readonly List<FieldSectionInfo> _sections;
+    private byte[] _fieldData;
+    private byte[]? _compressedData;
+    private List<FieldSectionInfo> _sections;
     private byte[]? _backgroundSectionOverride;
     private bool _removeUnusedTilesSection;
 
@@ -29,19 +28,7 @@ public sealed class FieldPC : Field
     {
         _fieldData = fieldData;
         _compressedData = compressedData;
-        _sectionOffsets = new uint[SectionCount];
-
-        if (fieldData.Length < HeaderSize)
-            throw new InvalidDataException("PC field data is shorter than the 42-byte header.");
-
-        var declaredSectionCount = BinaryPrimitives.ReadUInt32LittleEndian(fieldData.AsSpan(2, 4));
-        if (declaredSectionCount != SectionCount)
-            throw new InvalidDataException($"Unsupported PC field section count: {declaredSectionCount}.");
-
-        for (var i = 0; i < SectionCount; i++)
-            _sectionOffsets[i] = BinaryPrimitives.ReadUInt32LittleEndian(fieldData.AsSpan(6 + (i * 4), 4));
-
-        _sections = BuildSectionInfos(fieldData, _sectionOffsets);
+        _sections = ReadSectionTable(fieldData);
         TryOpenSection1();
         TryOpenModelLoader();
         TryOpenWalkmesh();
@@ -230,11 +217,34 @@ public sealed class FieldPC : Field
         SetModified();
     }
 
+    /// <summary>
+    /// Marks the field as saved. Like <c>Field::setSaved()</c> (which forces a reopen so section
+    /// positions are refreshed from the saved data), the saved bytes become the new baseline:
+    /// the field data and section table are rebuilt, cached archive bytes are dropped and one-shot
+    /// section overrides that are now baked into the data are cleared.
+    /// </summary>
     public override void SetSaved()
     {
+        var wasModified = IsModified;
+        if (wasModified)
+        {
+            var saved = BuildModifiedFieldData();
+            var sections = ReadSectionTable(saved);
+            _fieldData = saved;
+            _sections = sections;
+            _compressedData = null;
+            _backgroundSectionOverride = null;
+            _removeUnusedTilesSection = false;
+        }
+
         base.SetSaved();
         if (ScriptsAndTexts != null)
-            ScriptsAndTexts.Load(ScriptsAndTexts.Save(), ScriptsAndTexts.JapaneseText);
+        {
+            var sectionData = wasModified
+                ? GetSectionData(FieldSection.Scripts)
+                : ScriptsAndTexts.Save();
+            ScriptsAndTexts.Load(sectionData, ScriptsAndTexts.JapaneseText);
+        }
     }
 
     private byte[] BuildModifiedFieldData()
@@ -260,7 +270,8 @@ public sealed class FieldPC : Field
 
         var totalSize = HeaderSize + payloads.Sum(static payload => SectionSizeHeader + payload.Length) + Footer.Length;
         var output = new byte[totalSize];
-        _fieldData.AsSpan(0, 6).CopyTo(output);
+        // FieldPC::saveHeader(): two zero bytes then the section count (9).
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(2, 4), SectionCount);
         var cursor = HeaderSize;
         for (var index = 0; index < payloads.Length; index++)
         {
@@ -365,14 +376,11 @@ public sealed class FieldPC : Field
         foreach (var text in texts)
         {
             writer.Write(offset);
-            offset += checked((ushort)(FF7TextCodec.Encode(text).Length + 1));
+            offset += checked((ushort)FF7TextCodec.Encode(text).Length);
         }
 
         foreach (var text in texts)
-        {
             writer.Write(FF7TextCodec.Encode(text));
-            writer.Write((byte)0xFF);
-        }
 
         return stream.ToArray();
     }
@@ -418,6 +426,27 @@ public sealed class FieldPC : Field
             writer.Write(new byte[length - bytes.Length]);
     }
 
+    private static List<FieldSectionInfo> ReadSectionTable(byte[] fieldData)
+    {
+        if (fieldData.Length < HeaderSize)
+            throw new InvalidDataException("PC field data is shorter than the 42-byte header.");
+
+        var declaredSectionCount = BinaryPrimitives.ReadUInt32LittleEndian(fieldData.AsSpan(2, 4));
+        if (declaredSectionCount != SectionCount)
+            throw new InvalidDataException($"Unsupported PC field section count: {declaredSectionCount}.");
+
+        var offsets = new uint[SectionCount];
+        for (var i = 0; i < SectionCount; i++)
+            offsets[i] = BinaryPrimitives.ReadUInt32LittleEndian(fieldData.AsSpan(6 + (i * 4), 4));
+
+        return BuildSectionInfos(fieldData, offsets);
+    }
+
+    /// <summary>
+    /// Builds section metadata the way <c>Field::sectionData</c> / <c>Field::sectionSize</c> do:
+    /// a section's payload spans from its offset + 4 (the size prefix) to the next section's
+    /// offset, and the last one to the footer. The stored size prefix is not used.
+    /// </summary>
     private static List<FieldSectionInfo> BuildSectionInfos(byte[] fieldData, uint[] offsets)
     {
         var result = new List<FieldSectionInfo>(SectionCount);
@@ -429,18 +458,12 @@ public sealed class FieldPC : Field
             if (storedOffset < HeaderSize || storedOffset + SectionSizeHeader > fieldData.Length)
                 throw new InvalidDataException($"PC field section {i + 1} has an invalid offset.");
 
-            var declaredSize = BinaryPrimitives.ReadUInt32LittleEndian(
-                fieldData.AsSpan(storedOffset, SectionSizeHeader));
             var dataOffset = storedOffset + SectionSizeHeader;
             var maxEnd = i < SectionCount - 1 ? checked((int)offsets[i + 1]) : footerStart;
-            if (maxEnd < dataOffset)
+            if (maxEnd < dataOffset || maxEnd > fieldData.Length)
                 throw new InvalidDataException($"PC field section {i + 1} overlaps the following section.");
 
-            var maxSize = maxEnd - dataOffset;
-            var size = checked((int)declaredSize);
-            if (size > maxSize)
-                throw new InvalidDataException($"PC field section {i + 1} size exceeds its section range.");
-
+            var size = maxEnd - dataOffset;
             result.Add(new FieldSectionInfo(i + 1, FieldSectionForIndex(i), storedOffset, dataOffset, size));
         }
 

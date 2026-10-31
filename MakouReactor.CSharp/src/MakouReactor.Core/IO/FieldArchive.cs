@@ -453,7 +453,7 @@ public sealed class FieldArchive
             throw new InvalidOperationException("Loose directory paths are only available for directory archives.");
 
         var parts = archivePath
-            .Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries)
+            .Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries)
             .ToArray();
         if (parts.Length != 1 || parts[0] is "." or "..")
             throw new InvalidDataException($"Unsafe loose directory file name: {archivePath}");
@@ -482,7 +482,7 @@ public sealed class FieldArchive
     private static string BuildSafeExtractPath(string root, string archivePath)
     {
         var parts = archivePath
-            .Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries)
+            .Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(static part => part is "." or ".."
                 ? throw new InvalidDataException($"Unsafe archive path segment: {part}")
                 : part)
