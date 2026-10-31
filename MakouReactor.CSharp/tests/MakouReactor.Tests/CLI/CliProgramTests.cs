@@ -199,6 +199,86 @@ public sealed class CliProgramTests
         }
     }
 
+    [Fact]
+    public async Task batch_rejects_malformed_script_with_exit_code_1()
+    {
+        var (dir, archive, _) = ApplyFixture();
+        try
+        {
+            var script = Path.Combine(dir, "batch.json");
+            File.WriteAllText(script, "{ \"field\": \"testmap\" }");
+
+            var result = await RunCliAsync("batch", "--archive", archive, "--script", script, "--out", Path.Combine(dir, "out"));
+
+            result.ExitCode.Should().Be(1);
+            result.StdErr.Should().Contain("JSON array");
+            Directory.Exists(Path.Combine(dir, "out")).Should().BeFalse();
+
+            var missingScript = await RunCliAsync("batch", "--archive", archive, "--script", Path.Combine(dir, "nope.json"));
+            missingScript.ExitCode.Should().Be(1);
+            missingScript.StdErr.Should().Contain("Cannot read batch script");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task batch_rejects_missing_archive_with_exit_code_1()
+    {
+        var (dir, _, _) = ApplyFixture();
+        try
+        {
+            var script = Path.Combine(dir, "batch.json");
+            File.WriteAllText(script, "[{\"field\":\"testmap\",\"prompt\":\"Cloud waits\"}]");
+
+            var result = await RunCliAsync("batch", "--archive", Path.Combine(dir, "missing.lgp"), "--script", script,
+                                           "--out", Path.Combine(dir, "out"));
+
+            result.ExitCode.Should().Be(1);
+            result.StdErr.Should().Contain("Archive not found");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task batch_reports_unknown_field_per_entry_with_exit_code_1()
+    {
+        // Every entry names a missing field, so no LLM request is ever made.
+        var (dir, archive, _) = ApplyFixture();
+        try
+        {
+            var script = Path.Combine(dir, "batch.json");
+            File.WriteAllText(script, "[{\"field\":\"nosuchmap\",\"prompt\":\"Cloud waits\",\"seed\":3}]");
+            var outDir = Path.Combine(dir, "out");
+
+            var result = await RunCliAsync("batch", "--archive", archive, "--script", script, "--out", outDir);
+
+            result.ExitCode.Should().Be(1, result.StdErr);
+            result.StdOut.Should().Contain("nosuchmap").And.Contain("unknown_field");
+            result.StdErr.Should().Contain("Report written to");
+            File.ReadAllText(Path.Combine(outDir, "batch-report.json")).Should().Contain("\"unknown_field\"");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task batch_help_documents_options_and_informational_seed()
+    {
+        var result = await RunCliAsync("batch", "--help");
+
+        result.StdOut.Should().Contain("--archive").And.Contain("--script").And.Contain("--out")
+            .And.Contain("--apply").And.Contain("--config");
+        result.StdOut.Should().Contain("informational");
+    }
+
     private static Task<CliResult> RunCliAsync(params string[] args)
     {
         lock (ConsoleLock)

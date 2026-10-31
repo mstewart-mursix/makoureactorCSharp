@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 using MakouReactor.AI;
 using MakouReactor.AI.Backends;
+using MakouReactor.AI.Batch;
 using MakouReactor.AI.Config;
 using MakouReactor.AI.Layout;
 using MakouReactor.AI.Mapping;
@@ -20,7 +21,8 @@ namespace MakouReactor.CLI;
 /// <summary>
 /// Command-line front end for the scene generation pipeline.
 /// <c>generate</c> runs prompt → LLM → parse → validate and prints/writes the plan JSON;
-/// <c>validate</c> checks an existing plan file; <c>doctor</c> checks the Codex CLI setup.
+/// <c>validate</c> checks an existing plan file; <c>doctor</c> checks the Codex CLI setup;
+/// <c>apply</c>/<c>revert</c> write a plan into an archive safely; <c>batch</c> runs a script of prompts.
 /// </summary>
 public static class Program
 {
@@ -32,6 +34,7 @@ public static class Program
         root.AddCommand(BuildDoctorCommand());
         root.AddCommand(BuildApplyCommand());
         root.AddCommand(BuildRevertCommand());
+        root.AddCommand(BuildBatchCommand());
         return await root.InvokeAsync(args);
     }
 
@@ -317,19 +320,18 @@ public static class Program
             return 1;
         }
 
-        var layout = LayoutGenerator.Adjust(parsed.Plan, field);
-        foreach (var note in layout.Notes)
+        var check = ScenePlanApplyPipeline.Check(parsed.Plan, field);
+        foreach (var note in check.Layout.Notes)
             Console.Error.WriteLine($"  layout: {note}");
 
-        var validation = ScenePlanValidator.Validate(parsed.Plan, field);
-        PrintIssues(validation);
-        if (validation.HasErrors)
+        PrintIssues(check.Validation);
+        if (check.Validation.HasErrors)
         {
             Console.Error.WriteLine("Not applied: fix the validation errors first.");
             return 2;
         }
 
-        var preview = ScenePlanMapper.ApplyToField(parsed.Plan, field, new ApplyOptions { PreviewOnly = true });
+        var preview = check.Preview!;
         if (!preview.Ok)
         {
             Console.Error.WriteLine($"Preview failed: {preview.Error}");
@@ -349,20 +351,14 @@ public static class Program
             return 1;
         }
 
-        var applied = ScenePlanMapper.ApplyToField(parsed.Plan, field, new ApplyOptions { PreviewOnly = false });
-        if (!applied.Ok)
+        var commit = ScenePlanApplyPipeline.Commit(parsed.Plan, field, new SafeArchiveWriter(archivePath));
+        if (!commit.Ok)
         {
-            Console.Error.WriteLine($"Apply failed: {applied.Error}");
+            Console.Error.WriteLine(commit.Error);
             return 1;
         }
 
-        var result = new SafeArchiveWriter(archivePath).ApplyField(field);
-        if (!result.Ok)
-        {
-            Console.Error.WriteLine($"Write failed, archive untouched: {result.Error}");
-            return 1;
-        }
-
+        var result = commit.Write!;
         Console.Error.WriteLine($"Applied to '{fieldName}'. Backup: {result.Backup!.Path}");
         foreach (var pruned in result.PrunedBackups)
             Console.Error.WriteLine($"  pruned old backup {pruned}");
@@ -410,6 +406,74 @@ public static class Program
             }
         });
         return cmd;
+    }
+
+    // -----------------------------------------------------------------------
+    // batch
+    // -----------------------------------------------------------------------
+
+    private static Command BuildBatchCommand()
+    {
+        var archiveOpt = new Option<string>("--archive", "flevel.lgp to read fields from (and write to with --apply); a loose PC field directory works without --apply") { IsRequired = true };
+        var scriptOpt = new Option<string>("--script",
+            "Batch script: JSON array of { \"field\": name, \"prompt\": text, \"seed\"?: int }. " +
+            "The seed is informational only: it is recorded in the report, but no backend supports seeding") { IsRequired = true };
+        var outOpt = new Option<string>("--out", () => "batch-out", "Directory for <field>.plan.json files and batch-report.json");
+        var applyOpt = new Option<bool>("--apply", "Also apply each plan that passes validation (backup, verify, atomic replace per entry)");
+        var configOpt = new Option<string?>("--config", "Path to llm.config.json (defaults to search in cwd/app dir)");
+
+        var cmd = new Command("batch",
+            "Generate scene plans for several fields in sequence (one LLM request at a time) and write a summary report. " +
+            "Exit codes: 0 all entries ok, 1 bad input (missing archive, malformed script, unknown field), " +
+            "2 an entry had validation errors or failed");
+        cmd.AddOption(archiveOpt);
+        cmd.AddOption(scriptOpt);
+        cmd.AddOption(outOpt);
+        cmd.AddOption(applyOpt);
+        cmd.AddOption(configOpt);
+
+        cmd.SetHandler(async (InvocationContext ctx) =>
+        {
+            var parse = ctx.ParseResult;
+            var scriptPath = parse.GetValueForOption(scriptOpt)!;
+            var script = BatchScript.Load(scriptPath);
+            if (!script.Ok)
+            {
+                Console.Error.WriteLine(script.Error);
+                ctx.ExitCode = BatchReport.ExitBadInput;
+                return;
+            }
+
+            var options = new BatchOptions
+            {
+                ArchivePath = parse.GetValueForOption(archiveOpt)!,
+                OutputDirectory = parse.GetValueForOption(outOpt)!,
+                Apply = parse.GetValueForOption(applyOpt),
+                Log = line => Console.Error.WriteLine(line),
+            };
+            var config = LLMConfigLoader.Load(parse.GetValueForOption(configOpt));
+            ctx.ExitCode = await RunBatchAsync(new BatchRunner(config), script.Entries, options, ctx.GetCancellationToken());
+        });
+        return cmd;
+    }
+
+    /// <summary>Run a parsed batch script and print the summary table; returns the process exit code.</summary>
+    private static async Task<int> RunBatchAsync(BatchRunner runner, IReadOnlyList<BatchEntry> entries,
+                                                  BatchOptions options, System.Threading.CancellationToken cancellationToken)
+    {
+        var report = await runner.RunAsync(entries, options, cancellationToken);
+        if (report.InputError.Length > 0)
+        {
+            Console.Error.WriteLine(report.InputError);
+            return report.ExitCode;
+        }
+
+        Console.Write(report.FormatTable());
+        if (report.ReportPath != null)
+            Console.Error.WriteLine($"Report written to {report.ReportPath}");
+        if (report.ReportError.Length > 0)
+            Console.Error.WriteLine(report.ReportError);
+        return report.ExitCode;
     }
 
     // -----------------------------------------------------------------------

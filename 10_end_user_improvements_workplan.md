@@ -357,7 +357,10 @@ First-run experience decides whether a modder ever reaches the features above.
 > **Status: partly implemented.** `Core/Text/FF7TextMetrics.cs` (port of `FF7Font::calcSize`, used
 > by the mapper for WINDOW sizing and word wrap) and `Core/Data/GameTables.cs` (music tracks from
 > `Data.cpp` with "did you mean" suggestions in the validator). Item names are not embedded (the C++
-> app reads them from kernel data). Batch generation and window auto-placement remain.
+> app reads them from kernel data). Batch generation is implemented: CLI `batch` driving
+> `AI/Batch/BatchRunner.cs` (per-field plan JSONs, `batch-report.json` + stdout table, `--apply`
+> through the shared `AI/Mapping/ScenePlanApplyPipeline.cs`; exit 0 all ok, 1 bad input or unknown
+> field, 2 validation errors/failures; `seed` is recorded only). Window auto-placement remains.
 
 - **FF7-accurate text metrics:** port character width tables from `src/core/FF7Font.cpp` /
   `src/widgets/TextPreview.cpp` into `MakouReactor.Core/Text/FF7TextMetrics.cs`.
