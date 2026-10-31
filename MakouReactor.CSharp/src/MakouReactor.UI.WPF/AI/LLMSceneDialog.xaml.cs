@@ -30,6 +30,7 @@ public partial class LLMSceneDialog : Window
             ? $"Backend: http ({_config.Endpoint})"
             : $"Backend: codex (subscription{(string.IsNullOrEmpty(_config.CodexModel) ? "" : $", model {_config.CodexModel}")})";
         FieldContextLabel.Text = BuildFieldContextText(field);
+        PreviewCanvas.Model = ScenePreviewModel.Build(field, null);
     }
 
     private static LLMConfig LoadConfiguredBackend()
@@ -71,6 +72,7 @@ public partial class LLMSceneDialog : Window
         GenerationProgress.Visibility = Visibility.Visible;
         OutputBox.Clear();
         PreviewSummaryBox.Clear();
+        PreviewCanvas.Model = ScenePreviewModel.Build(_field, null);
         IssuesList.Items.Clear();
         _latestResult = null;
         StatusLabel.Text = $"Generating via '{_config.Backend}' backend...";
@@ -109,6 +111,7 @@ public partial class LLMSceneDialog : Window
             PreviewSummaryBox.Text = preview.Ok
                 ? preview.Summary
                 : preview.Error;
+            PreviewCanvas.Model = ScenePreviewModel.Build(_field, result.Plan);
             ApplyButton.IsEnabled = !result.Validation.HasErrors && _field != null;
 
             StatusLabel.Text = result.Validation.HasErrors
