@@ -646,6 +646,7 @@ public partial class MainWindow : Window
         }
 
         var fieldName = _currentField?.Name ?? _currentPlayStationField!.Name;
+        string? backupPath = null;
         try
         {
             using var cancellation = new CancellationTokenSource();
@@ -654,9 +655,18 @@ public partial class MainWindow : Window
             {
                 var archive = _archive;
                 var standalonePath = _archivePath;
+                var field = _currentField;
                 await Task.Run(() =>
                 {
-                    if (archive != null)
+                    if (archive != null && UsesSafeArchiveWriter(archive))
+                    {
+                        // PC flevel.lgp: timestamped backup, staged write, read-back check, atomic swap.
+                        var result = new SafeArchiveWriter(archive.ArchivePath).ApplyField(field);
+                        if (!result.Ok)
+                            throw new IOException($"{result.Error} The archive was not changed.");
+                        backupPath = result.Backup?.Path;
+                    }
+                    else if (archive != null)
                         archive.SaveField(_currentField, cancellation.Token);
                     else if (!string.IsNullOrWhiteSpace(standalonePath))
                         StandaloneFieldLoader.Save(standalonePath, _currentField);
@@ -674,9 +684,11 @@ public partial class MainWindow : Window
             if (_archive != null)
                 RefreshArchiveViews();
             UpdateDirtyState();
-            StatusLabel.Text = _archive == null || _archive.IsLooseDirectory
-                ? $"Saved {fieldName}."
-                : $"Saved {fieldName}. Backup written beside the archive.";
+            StatusLabel.Text = backupPath != null
+                ? $"Saved {fieldName}. Backup: {Path.GetFileName(backupPath)} (newest {SafeArchiveWriter.DefaultBackupsToKeep} kept)."
+                : _archive == null || _archive.IsLooseDirectory
+                    ? $"Saved {fieldName}."
+                    : $"Saved {fieldName}. Backup written beside the archive.";
         }
         catch (OperationCanceledException)
         {
@@ -691,6 +703,14 @@ public partial class MainWindow : Window
             SetBusy(false);
         }
     }
+
+    /// <summary>
+    /// PC LGP archives are saved through <see cref="SafeArchiveWriter"/> (rotating timestamped
+    /// backups and a verified atomic replace). Loose directories, disc images and PlayStation
+    /// archives keep their existing save paths.
+    /// </summary>
+    public static bool UsesSafeArchiveWriter(FieldArchive archive) =>
+        archive.Platform == FieldArchivePlatform.PC && !archive.IsLooseDirectory && !archive.IsReadOnlyImage;
 
     private async void SaveAs_Click(object sender, RoutedEventArgs e)
     {
