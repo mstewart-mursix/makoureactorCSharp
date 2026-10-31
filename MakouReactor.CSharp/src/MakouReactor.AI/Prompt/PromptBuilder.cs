@@ -64,7 +64,7 @@ public static class PromptBuilder
           | { type:"move"; actorId:string; to:{x:number;y:number}; speed?:number }
           | { type:"face"; actorId:string; dir:"N"|"S"|"E"|"W" }
           | { type:"wait"; ms:number }
-          | { type:"play_music"; track:string }
+          | { type:"play_music"; track:string }   // FF7 track name, e.g. "tifa", "aseri", "bat"
           | { type:"set_flag"; key:string; value:boolean }
           | { type:"if_flag"; key:string; then:EventStep[]; else?:EventStep[] }
           | { type:"give_item"; itemId:string; qty:number }

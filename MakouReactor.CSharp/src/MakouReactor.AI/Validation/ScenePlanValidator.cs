@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 using MakouReactor.AI.Layout;
+using MakouReactor.Core.Data;
 using MakouReactor.Core.Models;
 
 namespace MakouReactor.AI.Validation;
@@ -144,7 +145,20 @@ public static class ScenePlanValidator
 
             case EventStepType.PlayMusic:
                 if (string.IsNullOrWhiteSpace(s.Track))
+                {
                     Add(out_, Severity.Warn, $"{spath}.track", "Empty music track id");
+                }
+                else
+                {
+                    var music = GameTables.FindMusic(s.Track);
+                    if (!music.Found)
+                    {
+                        var hint = music.Suggestions.Count > 0
+                            ? "; did you mean " + string.Join(", ", music.Suggestions.Select(t => $"'{t.Name}' ({t.Title})")) + "?"
+                            : string.Empty;
+                        Add(out_, Severity.Warn, $"{spath}.track", $"Unknown music track '{s.Track}'{hint}");
+                    }
+                }
                 break;
 
             case EventStepType.SetFlag:

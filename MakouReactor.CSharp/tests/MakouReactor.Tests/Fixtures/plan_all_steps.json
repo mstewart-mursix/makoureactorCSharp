@@ -16,7 +16,7 @@
         { "type": "move", "actorId": "cloud", "to": {"x": 30, "y": 10} },
         { "type": "face", "actorId": "cloud", "dir": "S" },
         { "type": "wait", "ms": 300 },
-        { "type": "play_music", "track": "bgm_battle" },
+        { "type": "play_music", "track": "bat" },
         { "type": "set_flag", "key": "met_cloud", "value": true },
         { "type": "give_item", "itemId": "potion", "qty": 3 },
         { "type": "battle", "encounterId": "zombie_01" },
