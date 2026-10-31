@@ -86,6 +86,119 @@ public sealed class CliProgramTests
         }
     }
 
+    private const string ApplyPlan =
+        "{\"meta\":{\"title\":\"Greeting\",\"model\":\"m\",\"version\":\"1.0\"}," +
+        "\"actors\":[{\"id\":\"cloud\",\"position\":{\"x\":100,\"y\":100}}]," +
+        "\"dialog\":[{\"speakerId\":\"cloud\",\"text\":\"Let's move.\"}]}";
+
+    private static (string Dir, string Archive, string Plan) ApplyFixture(string planJson = ApplyPlan)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mr_apply_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var archive = Path.Combine(dir, "flevel.lgp");
+        MakouReactor.Core.IO.LgpArchive.Create(archive, new[]
+        {
+            new MakouReactor.Core.IO.LgpArchiveFile("testmap",
+                MakouReactor.Core.Models.FieldPC.CreateEmpty("testmap").SaveCompressed()),
+        });
+        var plan = Path.Combine(dir, "plan.json");
+        File.WriteAllText(plan, planJson);
+        return (dir, archive, plan);
+    }
+
+    [Fact]
+    public async Task apply_dry_run_prints_summary_and_writes_nothing()
+    {
+        var (dir, archive, plan) = ApplyFixture();
+        try
+        {
+            var before = File.ReadAllBytes(archive);
+
+            var result = await RunCliAsync("apply", "--archive", archive, "--field", "testmap", "--plan", plan, "--dry-run");
+
+            result.ExitCode.Should().Be(0, result.StdErr);
+            result.StdOut.Should().NotBeNullOrWhiteSpace();
+            result.StdErr.Should().Contain("Dry run");
+            File.ReadAllBytes(archive).Should().Equal(before);
+            Directory.GetFiles(dir, "flevel.lgp.mr-backup-*").Should().BeEmpty();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task apply_writes_with_backup_and_revert_restores()
+    {
+        var (dir, archive, plan) = ApplyFixture();
+        try
+        {
+            var before = File.ReadAllBytes(archive);
+
+            var applied = await RunCliAsync("apply", "--archive", archive, "--field", "testmap", "--plan", plan);
+
+            applied.ExitCode.Should().Be(0, applied.StdErr);
+            applied.StdErr.Should().Contain("Backup:");
+            Directory.GetFiles(dir, "flevel.lgp.mr-backup-*").Should().ContainSingle();
+            File.ReadAllBytes(archive).Should().NotEqual(before);
+            MakouReactor.Core.IO.FieldArchive.Open(archive).OpenField("testmap").ScriptsAndTexts!.Texts
+                .Should().Contain(t => t.Value.Contains("Let's move."));
+
+            var listed = await RunCliAsync("revert", "--archive", archive, "--list");
+            listed.StdOut.Should().Contain("mr-backup-");
+
+            var reverted = await RunCliAsync("revert", "--archive", archive);
+            reverted.ExitCode.Should().Be(0, reverted.StdErr);
+            File.ReadAllBytes(archive).Should().Equal(before);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task apply_refuses_plan_with_validation_errors()
+    {
+        var duplicate = ApplyPlan.Replace(
+            "[{\"id\":\"cloud\",\"position\":{\"x\":100,\"y\":100}}]",
+            "[{\"id\":\"cloud\",\"position\":{\"x\":100,\"y\":100}},{\"id\":\"cloud\",\"position\":{\"x\":150,\"y\":150}}]");
+        var (dir, archive, plan) = ApplyFixture(duplicate);
+        try
+        {
+            var before = File.ReadAllBytes(archive);
+
+            var result = await RunCliAsync("apply", "--archive", archive, "--field", "testmap", "--plan", plan);
+
+            result.ExitCode.Should().Be(2);
+            result.StdErr.Should().Contain("Duplicate actor id");
+            File.ReadAllBytes(archive).Should().Equal(before);
+            Directory.GetFiles(dir, "flevel.lgp.mr-backup-*").Should().BeEmpty();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task revert_without_backups_fails_cleanly()
+    {
+        var (dir, archive, _) = ApplyFixture();
+        try
+        {
+            var result = await RunCliAsync("revert", "--archive", archive);
+
+            result.ExitCode.Should().Be(1);
+            result.StdErr.Should().Contain("No backups");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     private static Task<CliResult> RunCliAsync(params string[] args)
     {
         lock (ConsoleLock)
