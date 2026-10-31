@@ -32,6 +32,7 @@ public sealed class FieldPC : Field
         TryOpenSection1();
         TryOpenModelLoader();
         TryOpenWalkmesh();
+        TryOpenCamera();
         TryOpenEncounters();
         TryOpenBackground();
         TryOpenInf();
@@ -516,6 +517,18 @@ public sealed class FieldPC : Field
         catch
         {
             ModelLoader = null;
+        }
+    }
+
+    private void TryOpenCamera()
+    {
+        try
+        {
+            Camera = CaFile.Open(GetSectionData(FieldSection.Camera));
+        }
+        catch
+        {
+            Camera = null;
         }
     }
 

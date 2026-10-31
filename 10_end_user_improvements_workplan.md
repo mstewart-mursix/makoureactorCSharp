@@ -357,7 +357,13 @@ First-run experience decides whether a modder ever reaches the features above.
 > **Status: partly implemented.** `Core/Text/FF7TextMetrics.cs` (port of `FF7Font::calcSize`, used
 > by the mapper for WINDOW sizing and word wrap) and `Core/Data/GameTables.cs` (music tracks from
 > `Data.cpp` with "did you mean" suggestions in the validator). Item names are not embedded (the C++
-> app reads them from kernel data). Batch generation and window auto-placement remain.
+> app reads them from kernel data). Dialog window auto-placement is done
+> (`AI/Mapping/DialogWindowPlacement.cs`, `Core/Models/CaFile.cs`): each `say` WINDOW goes in the
+> vertical half opposite the speaker, clamped with a port of `FF7Window::realPos()` (x 8..312,
+> y 8..223); with a walkmesh the speaker is projected through camera 0 (port of
+> `WalkmeshWidget::paintGL`'s view/projection, background scrolling not modelled), or placed from its
+> Y within the walkmesh bounds with an "approximate" warning when the field has no camera.
+> Batch generation remains.
 
 - **FF7-accurate text metrics:** port character width tables from `src/core/FF7Font.cpp` /
   `src/widgets/TextPreview.cpp` into `MakouReactor.Core/Text/FF7TextMetrics.cs`.

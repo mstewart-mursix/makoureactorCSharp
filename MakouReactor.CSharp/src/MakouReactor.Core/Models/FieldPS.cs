@@ -206,6 +206,7 @@ public sealed class FieldPS : Field
         TryOpenSection1();
         TryOpenModelLoader();
         TryOpenWalkmesh();
+        TryOpenCamera();
         TryOpenEncounters();
         TryOpenInf();
     }
@@ -231,6 +232,18 @@ public sealed class FieldPS : Field
         catch
         {
             ModelLoaderPS = null;
+        }
+    }
+
+    private void TryOpenCamera()
+    {
+        try
+        {
+            Camera = CaFile.Open(GetSectionData(FieldSection.Camera));
+        }
+        catch
+        {
+            Camera = null;
         }
     }
 
