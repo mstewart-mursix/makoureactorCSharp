@@ -100,8 +100,8 @@ public sealed class ScenePreviewModelTests
             try
             {
                 var canvas = new ScenePreviewCanvas { Model = ScenePreviewModel.Build(new MeshField(), Plan()) };
-                canvas.Measure(new Size(400, 300));
-                canvas.Arrange(new Rect(0, 0, 400, 300));
+                canvas.Measure(new System.Windows.Size(400, 300));
+                canvas.Arrange(new System.Windows.Rect(0, 0, 400, 300));
                 var bitmap = new RenderTargetBitmap(400, 300, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
                 bitmap.Render(canvas);
                 canvas.Model = null;
