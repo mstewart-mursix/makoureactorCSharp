@@ -45,8 +45,9 @@ public sealed record RawOpcode(
                 $"window={Bytes[1]}, x={ReadUInt16(2)}, y={ReadUInt16(4)}",
             "MAPJUMP" when Bytes.Length >= 10 =>
                 $"field={ReadUInt16(1)}, x={ReadUInt16(3)}, y={ReadUInt16(5)}, triangle={ReadUInt16(7)}, direction={Bytes[9]}",
+            // OpcodeBATTLE {banks; battleID (bank 2)} in src/core/field/Opcode.h.
             "BATTLE" when Bytes.Length >= 4 =>
-                $"battle={ReadUInt16(1)}, flags={Bytes[3]}",
+                $"banks={Bytes[1]}, battle={ReadUInt16(2)}",
             _ => $"args={string.Join(" ", Bytes.Skip(1).Select(static b => b.ToString("X2", CultureInfo.InvariantCulture)))}",
         };
     }
