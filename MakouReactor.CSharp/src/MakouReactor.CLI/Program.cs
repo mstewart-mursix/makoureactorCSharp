@@ -88,6 +88,7 @@ public static class Program
 
             Console.Error.WriteLine($"Generating via '{config.Backend}' backend...");
             var result = await service.GenerateAsync(scenePrompt, field: null, width, height);
+            PrintAttempts(result);
 
             if (!result.Ok)
             {
@@ -113,6 +114,21 @@ public static class Program
         });
 
         return cmd;
+    }
+
+    /// <summary>Report automatic repair attempts (silent when the first answer was accepted).</summary>
+    private static void PrintAttempts(SceneGenerationResult result)
+    {
+        if (result.Attempts.Count <= 1)
+            return;
+
+        foreach (var attempt in result.Attempts)
+            Console.Error.WriteLine($"  {attempt.Summary}");
+
+        var final = result.Attempts[^1];
+        Console.Error.WriteLine(final.Accepted
+            ? $"Succeeded after {result.RepairCount} repair attempt(s)."
+            : $"Still failing after {result.RepairCount} repair attempt(s).");
     }
 
     // -----------------------------------------------------------------------

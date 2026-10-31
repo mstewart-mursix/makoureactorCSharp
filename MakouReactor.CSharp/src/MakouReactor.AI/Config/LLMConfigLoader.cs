@@ -55,6 +55,12 @@ public static class LLMConfigLoader
                 ? tm.GetInt32()
                 : 0;
 
+            var maxRepairAttempts = root.TryGetProperty("max_repair_attempts", out var mr)
+                                    && mr.ValueKind == JsonValueKind.Number
+                                    && mr.TryGetInt32(out var mrValue)
+                ? Math.Max(0, mrValue)
+                : LLMConfig.DefaultMaxRepairAttempts;
+
             var endpoint = root.TryGetProperty("endpoint", out var ep) && ep.ValueKind == JsonValueKind.String
                 ? ep.GetString()!
                 : DefaultEndpoint;
@@ -77,6 +83,7 @@ public static class LLMConfigLoader
                 CodexExecutable = codexExecutable,
                 CodexModel = codexModel,
                 TimeoutMs = timeoutMs,
+                MaxRepairAttempts = maxRepairAttempts,
                 Endpoint = endpoint,
                 ApiKey = apiKey,
                 Model = model

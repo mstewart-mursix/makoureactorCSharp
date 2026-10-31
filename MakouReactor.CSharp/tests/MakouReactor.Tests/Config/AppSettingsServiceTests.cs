@@ -103,6 +103,7 @@ public sealed class AppSettingsServiceTests
               "codex_executable": "C:\\tools\\codex.cmd",
               "codex_model": "gpt-5-codex",
               "timeout_ms": 90000,
+              "max_repair_attempts": 4,
               "endpoint": "http://localhost:1234/v1",
               "api_key": "legacy-key",
               "model": "legacy-model"
@@ -115,6 +116,7 @@ public sealed class AppSettingsServiceTests
         settings.Llm.CodexExecutable.Should().Be("C:\\tools\\codex.cmd");
         settings.Llm.CodexModel.Should().Be("gpt-5-codex");
         settings.Llm.TimeoutMs.Should().Be(90000);
+        settings.Llm.RepairAttempts.Should().Be(4);
         settings.Llm.Endpoint.Should().Be("http://localhost:1234/v1/chat/completions");
         settings.Llm.ApiKey.Should().Be("legacy-key");
         settings.Llm.Model.Should().Be("legacy-model");

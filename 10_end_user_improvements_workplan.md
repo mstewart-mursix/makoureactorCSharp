@@ -207,6 +207,12 @@ reality; this is the biggest output-quality lever.
 
 ## Phase 3 — Self-repair loop (auto-retry on bad output)
 
+> **Status: implemented.** `SceneGenerationService.GenerateAsync` re-prompts on extraction,
+> parse, or validation errors (transport failures and cancellation are never retried);
+> `SceneGenerationResult.Attempts` / `RepairCount` record each call; `max_repair_attempts`
+> (default 2) is read by both loaders and migrated into `LlmAppSettings.RepairAttempts`, which
+> the WPF generator now honours. Tests: `tests/MakouReactor.Tests/SceneGenerationRepairTests.cs`.
+
 Turn model sloppiness into reliability. Nearly free on the subscription.
 
 - In `SceneGenerationService.GenerateAsync`: when JSON extraction, parsing, or validation

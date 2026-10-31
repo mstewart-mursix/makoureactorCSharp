@@ -41,6 +41,7 @@ public partial class LLMSceneDialog : Window
             CodexExecutable = settings.Llm.CodexExecutable,
             CodexModel = settings.Llm.CodexModel,
             TimeoutMs = settings.Llm.TimeoutMs,
+            MaxRepairAttempts = Math.Max(0, settings.Llm.RepairAttempts),
             Endpoint = settings.Llm.Endpoint,
             ApiKey = settings.Llm.ApiKey,
             Model = settings.Llm.Model,
@@ -81,9 +82,16 @@ public partial class LLMSceneDialog : Window
         {
             var result = await service.GenerateAsync(prompt, _field);
 
+            var repairNote = result.RepairCount > 0
+                ? $" (after {result.RepairCount} repair attempt(s))"
+                : string.Empty;
+            // Earlier rejected attempts; the final attempt is reflected by the status and issues below.
+            foreach (var attempt in result.Attempts.Take(result.Attempts.Count - 1))
+                IssuesList.Items.Add(attempt.Summary);
+
             if (!result.Ok)
             {
-                StatusLabel.Text = $"Failed: {result.Error}";
+                StatusLabel.Text = $"Failed{repairNote}: {result.Error}";
                 OutputBox.Text = result.RawJson;
                 return;
             }
@@ -104,8 +112,8 @@ public partial class LLMSceneDialog : Window
             ApplyButton.IsEnabled = !result.Validation.HasErrors && _field != null;
 
             StatusLabel.Text = result.Validation.HasErrors
-                ? $"Generated with validation errors ({result.Validation.Issues.Count} issue(s))"
-                : $"Done - {result.Plan!.Actors.Count} actors, {result.Plan.Dialog.Count} dialog lines, {result.Plan.Events.Count} events";
+                ? $"Generated with validation errors ({result.Validation.Issues.Count} issue(s)){repairNote}"
+                : $"Done{repairNote} - {result.Plan!.Actors.Count} actors, {result.Plan.Dialog.Count} dialog lines, {result.Plan.Events.Count} events";
         }
         catch (Exception ex)
         {
