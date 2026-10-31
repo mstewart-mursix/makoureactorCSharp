@@ -360,7 +360,12 @@ First-run experience decides whether a modder ever reaches the features above.
 > app reads them from kernel data). Batch generation is implemented: CLI `batch` driving
 > `AI/Batch/BatchRunner.cs` (per-field plan JSONs, `batch-report.json` + stdout table, `--apply`
 > through the shared `AI/Mapping/ScenePlanApplyPipeline.cs`; exit 0 all ok, 1 bad input or unknown
-> field, 2 validation errors/failures; `seed` is recorded only). Window auto-placement remains.
+> field, 2 validation errors/failures; `seed` is recorded only). Dialog window auto-placement is done
+> (`AI/Mapping/DialogWindowPlacement.cs`, `Core/Models/CaFile.cs`): each `say` WINDOW goes in the
+> vertical half opposite the speaker, clamped with a port of `FF7Window::realPos()` (x 8..312,
+> y 8..223); with a walkmesh the speaker is projected through camera 0 (port of
+> `WalkmeshWidget::paintGL`'s view/projection, background scrolling not modelled), or placed from its
+> Y within the walkmesh bounds with an "approximate" warning when the field has no camera.
 
 - **FF7-accurate text metrics:** port character width tables from `src/core/FF7Font.cpp` /
   `src/widgets/TextPreview.cpp` into `MakouReactor.Core/Text/FF7TextMetrics.cs`.

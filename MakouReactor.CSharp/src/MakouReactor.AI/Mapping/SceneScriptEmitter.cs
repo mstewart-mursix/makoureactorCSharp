@@ -64,7 +64,10 @@ internal sealed class SceneScriptEmitter
     internal const byte DialogWindowId = 0;
 
     /// <summary>Top margin of dialog windows (the <c>realPos()</c> minimum).</summary>
-    internal const short DialogWindowY = 8;
+    internal const short DialogWindowY = DialogWindowPlacement.MinY;
+
+    /// <summary>Speaker id that always gets the default window placement.</summary>
+    internal const string NarratorId = "narrator";
 
     /// <summary>Priority used for <c>REQEW</c> calls (0-7, packed in bits 5-7).</summary>
     internal const int RequestPriority = 1;
@@ -94,6 +97,9 @@ internal sealed class SceneScriptEmitter
     private readonly Section1File _section;
     private readonly ApplyOptions _options;
     private readonly IdFile? _walkmesh;
+    private readonly FieldCamera? _camera;
+    private readonly Dictionary<string, (int X, int Y, int Z)> _actorStart = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (int X, int Y, int Z)> _actorNow = new(StringComparer.Ordinal);
     private readonly int _modelLoaderCount;
     private readonly SceneEmission _out;
     private readonly HashSet<string> _usedNames = new(StringComparer.OrdinalIgnoreCase);
@@ -113,6 +119,7 @@ internal sealed class SceneScriptEmitter
         _section = section;
         _options = options;
         _walkmesh = LayoutGenerator.WalkmeshOf(field);
+        _camera = field.Camera is { HasCamera: true } ca ? ca.Cameras[0] : null;
         _modelLoaderCount = field.ModelLoader?.ModelCount ?? 0;
         _out = new SceneEmission { DirectorName = directorName };
     }
@@ -200,6 +207,12 @@ internal sealed class SceneScriptEmitter
                     break;
             }
 
+            // Speaker positions for window placement: each event starts from the initial layout
+            // and follows its own move steps in emission order.
+            _actorNow.Clear();
+            foreach (var (id, position) in _actorStart)
+                _actorNow[id] = position;
+
             EmitSteps(builder, host, evt.Steps, path, unreferencedDialog);
         }
 
@@ -261,6 +274,7 @@ internal sealed class SceneScriptEmitter
             group.Init.Char((byte)Math.Min(modelId, byte.MaxValue));
             var (x, y, z, triangle) = Place(actor.Position, $"actor '{actor.Id}'");
             group.Init.Xyzi(x, y, z, triangle);
+            _actorStart.TryAdd(actor.Id, (x, y, z));
             if (actor.Facing.HasValue)
                 group.Init.Dir(DirectionByte(actor.Facing.Value));
             group.Init.Ret();
@@ -293,6 +307,7 @@ internal sealed class SceneScriptEmitter
                     {
                         var (x, y, _, _) = Place(step.To, stepPath, needTriangle: false);
                         b.Move(x, y);
+                        _actorNow[step.ActorId] = (x, y, FloorZ(x, y));
                     });
                     if (step.Speed > 0)
                         Warn($"{stepPath}: speed {step.Speed.ToString(CultureInfo.InvariantCulture)} is ignored; MOVE uses the model's current speed.");
@@ -370,11 +385,55 @@ internal sealed class SceneScriptEmitter
 
         var wrapped = _out.TextObjects[textId - _section.TextCount];
         unreferencedDialog.Remove(wrapped.Value);
+        // One WINDOW per say step: every page of the text (MaxLinesPerPage, {NEW PAGE}) reuses it,
+        // and CalcWindowSize sizes it for the widest line and tallest page, so the placement
+        // below covers all pages.
         var (width, height) = FF7TextMetrics.CalcWindowSize(wrapped.RawBytes ?? FF7TextCodec.Encode(wrapped.Value));
-        var x = (short)Math.Max(8, (320 - width) / 2);
-        builder.Window(DialogWindowId, x, DialogWindowY, (ushort)width, (ushort)height);
+        var (x, y) = PlaceWindow(step.ActorId, width, height);
+        builder.Window(DialogWindowId, x, y, (ushort)width, (ushort)height);
         builder.Message(DialogWindowId, (byte)textId);
     }
+
+    /// <summary>
+    /// Dialog window position for a <c>say</c> step (see <see cref="DialogWindowPlacement"/>): the
+    /// opposite vertical half from the speaker. The speaker's screen y comes from the plan position
+    /// directly when the field has no walkmesh (positions are then 320x240 screen pixels,
+    /// <see cref="LayoutGenerator.DefaultBounds"/>), from the field camera's projection when the
+    /// field has a walkmesh and a camera, and otherwise from an approximation over the walkmesh
+    /// bounds (with a warning). Narrator and unknown speakers keep the default placement.
+    /// </summary>
+    private (short X, short Y) PlaceWindow(string speaker, int width, int height)
+    {
+        if (string.Equals(speaker, NarratorId, StringComparison.OrdinalIgnoreCase)
+            || !_actorNow.TryGetValue(speaker, out var position))
+        {
+            return DialogWindowPlacement.Default(width, height);
+        }
+
+        double screenY;
+        if (_walkmesh == null)
+        {
+            screenY = position.Y;
+        }
+        else if (_camera != null
+                 && DialogWindowPlacement.TryProjectToScreen(_camera, position.X, position.Y, position.Z, out _, out var projected))
+        {
+            screenY = projected;
+        }
+        else
+        {
+            WarnOnce("window-placement-approximate",
+                (_camera == null ? "The field has no camera data" : "The field camera could not project an actor") +
+                ": dialog windows were placed from the speaker's Y within the walkmesh bounds (larger Y taken as higher on screen); placement is approximate.");
+            screenY = DialogWindowPlacement.ApproximateScreenY(WalkmeshGeometry.Bounds(_walkmesh)!.Value, position.Y);
+        }
+
+        return DialogWindowPlacement.AvoidingActor(screenY, width, height);
+    }
+
+    /// <summary>Walkmesh floor height at (x, y), or 0 off the walkmesh or without one.</summary>
+    private int FloorZ(int x, int y) =>
+        _walkmesh != null && WalkmeshGeometry.TryLocate(_walkmesh, new Point(x, y), out _, out var z) ? z : 0;
 
     private void EmitForActor(ScriptBuilder builder, ActorGroup host, EventStep step, string path, Action<ScriptBuilder, ActorGroup> emit)
     {

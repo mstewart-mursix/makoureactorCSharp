@@ -38,6 +38,9 @@ public abstract class Field
     public BackgroundFilePC? Background { get; protected set; }
     public InfFile? Inf { get; protected set; }
 
+    /// <summary>The camera section (<c>CaFile</c>), or null when it is missing or malformed.</summary>
+    public CaFile? Camera { get; protected set; }
+
     // Dictionary of section type to data
     private readonly Dictionary<FieldSection, object> _parts = new();
 
