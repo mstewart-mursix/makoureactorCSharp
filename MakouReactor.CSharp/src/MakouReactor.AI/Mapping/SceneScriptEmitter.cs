@@ -32,7 +32,7 @@ internal sealed class SceneEmission
 /// work plan phase 1e). Layout of the output:
 /// <list type="bullet">
 /// <item>One director group (named from <see cref="ApplyOptions.GroupNameOverride"/>, default
-/// <c>LLMScene</c>): init = <c>RET</c>; main = the <c>on_enter</c>/<c>auto</c>/<c>zone</c> events,
+/// <c>LLMScene</c>): init = <c>RET</c>; main = the <c>on_enter</c>/<c>auto</c> events (<c>zone</c> events get a LINE group each),
 /// guarded by a run-once bit (<c>IFUB</c> bit-off test, <c>BITON</c>) because the main script loops.</item>
 /// <item>One model group per plan actor: init = <c>CHAR</c>, <c>XYZI</c> at the plan position
 /// (triangle and Z from the walkmesh), optional <c>DIR</c>, <c>RET</c>; main = <c>RET</c> (idle);
@@ -75,6 +75,12 @@ internal sealed class SceneScriptEmitter
     /// <summary>First file script used for <c>REQEW</c> sub-scripts (0 = init/main, 1 = talk, 2 = contact).</summary>
     internal const int FirstSubScript = 3;
 
+    /// <summary>
+    /// 33-slot index of a Location group's "S5 - Go 1x" script (<c>GrpScript::scriptName</c> in
+    /// src/core/field/GrpScript.cpp): runs once each time the player steps onto the group's LINE.
+    /// </summary>
+    internal const int GoOnceSlot = 6;
+
     /// <summary>Largest group count <c>Section1File.Save</c> accepts.</summary>
     internal const int MaxGroups = byte.MaxValue;
 
@@ -105,6 +111,7 @@ internal sealed class SceneScriptEmitter
     private readonly HashSet<string> _usedNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ActorGroup> _actors = new(StringComparer.Ordinal);
     private readonly List<ActorGroup> _actorGroups = [];
+    private readonly List<ActorGroup> _lineGroups = [];
     private readonly Dictionary<string, int> _textIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (byte Address, byte Bit)> _flags = new(StringComparer.Ordinal);
     private readonly HashSet<byte> _reservedAddresses = [];
@@ -130,7 +137,7 @@ internal sealed class SceneScriptEmitter
         if (options.FlagBank is < 1 or > 15)
             return new SceneEmission { Error = $"Flag bank {options.FlagBank} is invalid; variable banks are 1-15." };
 
-        var groupCount = section.GrpScriptCount + 1 + plan.Actors.Count;
+        var groupCount = section.GrpScriptCount + 1 + plan.Actors.Count + plan.Events.Count(static e => e.Trigger == "zone");
         if (groupCount > MaxGroups)
         {
             return new SceneEmission
@@ -197,8 +204,9 @@ internal sealed class SceneScriptEmitter
                     break;
 
                 case "zone":
-                    Warn($"{path}: trigger zones are not wired (InfFile trigger support is a follow-up); the event runs once when the field is entered.");
-                    goto default;
+                    host = CreateZoneLineGroup(evt, path);
+                    builder = host.GoOnce;
+                    break;
 
                 default:
                     host = director;
@@ -236,6 +244,12 @@ internal sealed class SceneScriptEmitter
                 actor.Talk.Ret();
         }
 
+        foreach (var line in _lineGroups)
+        {
+            line.Main.Ret();
+            line.GoOnce.Ret();
+        }
+
         if (unreferencedDialog.Count > 0)
         {
             Warn($"{unreferencedDialog.Count} dialog line(s) are not used by any say step; their texts were added but no MESSAGE shows them.");
@@ -252,8 +266,49 @@ internal sealed class SceneScriptEmitter
         Finish(director);
         foreach (var actor in _actorGroups)
             Finish(actor);
+        foreach (var line in _lineGroups)
+            Finish(line);
 
         return _out;
+    }
+
+    /// <summary>
+    /// A <c>zone</c> event becomes a Location group: init places a <c>LINE</c> across the zone's
+    /// middle along its longer axis (a line is the trigger shape FF7 field scripts have; the player
+    /// walking into the zone crosses it), with Z from the walkmesh, and the event runs from the
+    /// group's "S5 - Go 1x" script.
+    /// </summary>
+    private ActorGroup CreateZoneLineGroup(EventDef evt, string path)
+    {
+        var name = UniqueName("z_" + evt.Id, "zone", _usedNames);
+        _usedNames.Add(name);
+        var index = _section.GrpScriptCount + 1 + _actorGroups.Count + _lineGroups.Count;
+        var group = new ActorGroup(index, name, $"zone '{evt.Id}'");
+        _lineGroups.Add(group);
+
+        var z = evt.TriggerZone;
+        int x1, y1, x2, y2;
+        if (z.Width >= z.Height)
+        {
+            y1 = y2 = z.Y + z.Height / 2;
+            x1 = z.X;
+            x2 = z.X + z.Width;
+        }
+        else
+        {
+            x1 = x2 = z.X + z.Width / 2;
+            y1 = z.Y;
+            y2 = z.Y + z.Height;
+        }
+
+        group.Init.Line(ClampShort(x1), ClampShort(y1), ClampShort(FloorZ(x1, y1)),
+                        ClampShort(x2), ClampShort(y2), ClampShort(FloorZ(x2, y2)));
+        group.Init.Ret();
+
+        if (_walkmesh == null)
+            WarnOnce("zone-no-walkmesh", $"{path}: the field has no walkmesh, so the trigger line uses the zone's coordinates unchanged with Z = 0.");
+        _out.Notes.Add($"{path}: trigger line ({x1},{y1})-({x2},{y2}) in group \"{name}\"; the event runs on \"S5 - Go 1x\".");
+        return group;
     }
 
     private void CreateActorGroups(int firstIndex)
@@ -737,7 +792,7 @@ internal sealed class SceneScriptEmitter
         var grp = new GrpScript(group.Name);
         var scripts = new List<AppliedScript>();
 
-        void Add(int slot, ScriptBuilder builder)
+        void Add(int slot, ScriptBuilder builder, string? label = null)
         {
             if (builder.IsEmpty)
                 return;
@@ -747,12 +802,13 @@ internal sealed class SceneScriptEmitter
             var names = RawOpcodeReader.Read(bytes).Select(static op => op.Name).ToArray();
             foreach (var name in names)
                 _out.OpcodeCounts[name] = _out.OpcodeCounts.GetValueOrDefault(name) + 1;
-            scripts.Add(new AppliedScript(slot, SlotLabel(slot), bytes, names));
+            scripts.Add(new AppliedScript(slot, label ?? SlotLabel(slot), bytes, names));
         }
 
         Add(0, group.Init);
         Add(1, group.Main);
         Add(2, group.Talk);
+        Add(GoOnceSlot, group.GoOnce, "S5 - Go 1x");
         for (var index = 0; index < group.SubScripts.Count; index++)
             Add(FirstSubScript + index + 1, group.SubScripts[index]);
 
@@ -864,6 +920,9 @@ internal sealed class SceneScriptEmitter
         public ScriptBuilder Init { get; } = new();
         public ScriptBuilder Main { get; } = new();
         public ScriptBuilder Talk { get; } = new();
+
+        /// <summary>Location groups only: the "S5 - Go 1x" script.</summary>
+        public ScriptBuilder GoOnce { get; } = new();
         public List<ScriptBuilder> SubScripts { get; } = [];
         public int NextSubScript => FirstSubScript + SubScripts.Count;
     }

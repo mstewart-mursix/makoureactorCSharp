@@ -141,7 +141,7 @@ public sealed class ScenePlanMapperEmissionTests
                     new EventStep { Type = EventStepType.GiveItem, ItemId = "item:999", Qty = 1 },
                     new EventStep { Type = EventStepType.Move, ActorId = "ghost", To = new Point(1, 2) },
                 ]),
-                new EventDef("zone", "zone", steps: [new EventStep { Type = EventStepType.Wait, Ms = 500 }]),
+                new EventDef("zone", "zone", new Rectangle(10, 20, 100, 40), steps: [new EventStep { Type = EventStepType.Wait, Ms = 500 }]),
             },
         };
 
@@ -155,7 +155,7 @@ public sealed class ScenePlanMapperEmissionTests
         result.Warnings.Should().Contain(w => w.Contains("'boss'") && w.Contains("BATTLE not emitted"));
         result.Warnings.Should().Contain(w => w.Contains("'item:999'"));
         result.Warnings.Should().Contain(w => w.Contains("'ghost' is not a plan actor"));
-        result.Warnings.Should().Contain(w => w.Contains("trigger zones are not wired"));
+        result.Warnings.Should().Contain(w => w.Contains("trigger line uses the zone's coordinates unchanged"));
         result.Warnings.Should().Contain(w => w.Contains("no walkmesh"));
 
         var guardInit = RawOpcodeReader.Read(field.ScriptsAndTexts!.GrpScripts[2].Scripts[0].RawBytes.Span);
@@ -163,8 +163,25 @@ public sealed class ScenePlanMapperEmissionTests
         guardInit[1].Bytes.Should().Equal(0xA5, 0, 0, 12, 0, 34, 0, 0, 0, 0, 0);
 
         var main = RawOpcodeReader.Read(field.ScriptsAndTexts.GrpScripts[1].Scripts[1].RawBytes.Span);
-        main.Select(op => op.Name).Should().Equal("IFUB", "BITON", "WAIT", "RET");
-        main[2].Bytes.Should().Equal(0x24, 15, 0); // 500 ms = 15 frames at 30 fps
+        main.Select(op => op.Name).Should().Equal("IFUB", "BITON", "RET");
+
+        // The zone event is its own Location group: LINE across the zone's middle (wider than tall,
+        // so horizontal at y = 20 + 40/2), and the event on "S5 - Go 1x" (33-slot index 6).
+        var zone = field.ScriptsAndTexts.GrpScripts[3];
+        zone.Type.Should().Be(GrpScriptType.Location);
+        var zoneInit = RawOpcodeReader.Read(zone.Scripts[0].RawBytes.Span);
+        zoneInit.Select(op => op.Name).Should().Equal("LINE", "RET");
+        zoneInit[0].Bytes.Should().Equal(0xD0, 10, 0, 40, 0, 0, 0, 110, 0, 40, 0, 0, 0);
+        var goOnce = RawOpcodeReader.Read(zone.Scripts[SceneScriptEmitterSlots.GoOnce].RawBytes.Span);
+        goOnce.Select(op => op.Name).Should().Equal("WAIT", "RET");
+        goOnce[0].Bytes.Should().Equal(0x24, 15, 0); // 500 ms = 15 frames at 30 fps
+        result.Groups.Should().Contain(g => g.Name == zone.Name && g.Scripts.Any(sc => sc.Label == "S5 - Go 1x"));
+    }
+
+    /// <summary>Mirrors <c>SceneScriptEmitter.GoOnceSlot</c> (internal to the AI assembly).</summary>
+    private static class SceneScriptEmitterSlots
+    {
+        public const int GoOnce = 6;
     }
 
     [Fact]

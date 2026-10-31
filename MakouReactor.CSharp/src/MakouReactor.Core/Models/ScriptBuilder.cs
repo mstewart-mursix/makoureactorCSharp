@@ -62,6 +62,9 @@ public sealed class ScriptBuilder
     /// <summary><c>MUSIC</c>, Opcode.h line 201 (0xF0); <c>OpcodeMusic</c> {musicID}; length 2 (line 5555).</summary>
     public const byte MUSIC = 0xF0;
 
+    /// <summary><c>LINE</c> (Opcode.h line 191, <c>OpcodeLINE</c>: two qint16 X/Y/Z points; size 13 in Opcode.cpp).</summary>
+    public const byte LINE = 0xD0;
+
     /// <summary><c>Opcode::Operator::BitOn</c> (Opcode.h line 1564: Equal=0 ... BitOn=9, BitOff=10).</summary>
     public const byte OperatorBitOn = 9;
     /// <summary><c>Opcode::Operator::BitOff</c> (Opcode.h line 1564).</summary>
@@ -161,6 +164,10 @@ public sealed class ScriptBuilder
     /// <summary>Emits <c>XYZI</c> with constant operands (both bank bytes = 0).</summary>
     public ScriptBuilder Xyzi(short x, short y, short z, ushort triangle) =>
         Raw(XYZI, 0x00, 0x00, Lo(x), Hi(x), Lo(y), Hi(y), Lo(z), Hi(z), Lo(triangle), Hi(triangle));
+
+    /// <summary>Emits <c>LINE</c> between two field points (no bank byte: operands are always constants).</summary>
+    public ScriptBuilder Line(short x1, short y1, short z1, short x2, short y2, short z2) =>
+        Raw(LINE, Lo(x1), Hi(x1), Lo(y1), Hi(y1), Lo(z1), Hi(z1), Lo(x2), Hi(x2), Lo(y2), Hi(y2), Lo(z2), Hi(z2));
 
     /// <summary>Emits <c>MOVE</c> with constant operands (banks = 0).</summary>
     public ScriptBuilder Move(short x, short y) => Raw(MOVE, 0x00, Lo(x), Hi(x), Lo(y), Hi(y));

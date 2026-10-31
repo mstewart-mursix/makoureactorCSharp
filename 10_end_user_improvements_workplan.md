@@ -152,7 +152,7 @@ tests over small synthetic fixtures built in code.
 > and sizes cite `Opcode.h`/`Opcode.cpp`. `ApplyResult` gains structured groups/texts/opcode
 > counts/warnings; PreviewOnly never mutates. Open items (warned in the summary): new actors need
 > Model Loader entries; direction byte orientation (S=0) and the MUSIC index semantics are unverified;
-> `zone` triggers run on entry instead of through INF triggers; move speed ignored.
+> `zone` events now get a Location group with a `LINE` across the zone's middle (longer axis) and run from "S5 - Go 1x"; move speed ignored.
 > A binary-format audit (LZS/LGP verified; Section1/opcode sizes/FF7TextCodec/FieldPC fixed) preceded it.
 
 Rewrite `MakouReactor.AI/Mapping/ScenePlanMapper.ApplyToField` to emit actual script data.
