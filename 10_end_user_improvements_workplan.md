@@ -147,6 +147,14 @@ tests over small synthetic fixtures built in code.
 
 ### 1e. Real `ScenePlanMapper` opcode emission
 
+> **Status: implemented.** `Core/Models/ScriptBuilder.cs` (raw opcodes, label/jump fixups,
+> short→long widening per `Script::compile`) and `AI/Mapping/SceneScriptEmitter.cs`. Ids, layouts
+> and sizes cite `Opcode.h`/`Opcode.cpp`. `ApplyResult` gains structured groups/texts/opcode
+> counts/warnings; PreviewOnly never mutates. Open items (warned in the summary): new actors need
+> Model Loader entries; direction byte orientation (S=0) and the MUSIC index semantics are unverified;
+> `zone` triggers run on entry instead of through INF triggers; move speed ignored.
+> A binary-format audit (LZS/LGP verified; Section1/opcode sizes/FF7TextCodec/FieldPC fixed) preceded it.
+
 Rewrite `MakouReactor.AI/Mapping/ScenePlanMapper.ApplyToField` to emit actual script data.
 Verify every opcode id against the enum in `src/core/field/Opcode.h` — do not trust
 memory or wikis for hex values.
@@ -269,6 +277,12 @@ Codex runs take 1–5 minutes; the UI must not look frozen, and users iterate.
 
 ## Phase 5 — Preview, diff, and safe apply
 
+> **Status: mostly implemented.** `Core/IO/SafeArchiveWriter.cs` (timestamped backups, keep 5,
+> staged write + byte-identical read-back, atomic replace, restore newest); CLI `apply`
+> (`--dry-run`) and `revert` (`--list`); WPF "Map preview" tab (`AI/ScenePreviewModel.cs`,
+> `AI/ScenePreviewCanvas.cs`). Remaining: WPF apply/save still uses `LgpArchive`'s single `.bak`
+> instead of `SafeArchiveWriter`; existing NPC positions are not drawn yet (needs script decoding).
+
 The "never corrupt flevel data" promise, made visible.
 
 - **Preview canvas** (WPF): a `Canvas`/custom control drawing, in field coordinates:
@@ -314,6 +328,12 @@ Currently the plan schema only carries a `walkmeshHint` string. Make walkmesh a 
 
 ## Phase 7 — Onboarding, settings UI, packaging
 
+> **Status: implemented.** `AI/Backends/CodexSetupChecker.cs` (`codex login status`, 10s timeout),
+> CLI `doctor` uses it, WPF `Shell/CodexSetupBanner` (async, dismissible; only started by `App`).
+> Settings dialog already existed; `RepairAttempts` is now honoured. CI: `.github/workflows/csharp.yml`
+> (Windows full solution + Linux) and `csharp-release.yml` (self-contained win-x64 zips on
+> `csharp-v*` tags; untested until on the default branch).
+
 First-run experience decides whether a modder ever reaches the features above.
 
 - **Startup doctor** (WPF): on launch run the existing CLI doctor logic in-process
@@ -333,6 +353,11 @@ First-run experience decides whether a modder ever reaches the features above.
 - Tests: settings round-trip (save → loader reads back identical config).
 
 ## Phase 8 — Fidelity and power-user extras
+
+> **Status: partly implemented.** `Core/Text/FF7TextMetrics.cs` (port of `FF7Font::calcSize`, used
+> by the mapper for WINDOW sizing and word wrap) and `Core/Data/GameTables.cs` (music tracks from
+> `Data.cpp` with "did you mean" suggestions in the validator). Item names are not embedded (the C++
+> app reads them from kernel data). Batch generation and window auto-placement remain.
 
 - **FF7-accurate text metrics:** port character width tables from `src/core/FF7Font.cpp` /
   `src/widgets/TextPreview.cpp` into `MakouReactor.Core/Text/FF7TextMetrics.cs`.
