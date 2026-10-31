@@ -33,7 +33,6 @@ public sealed class Section1File
     public int GrpScriptCount => GrpScripts.Count;
     public int TextCount => Texts.Count;
     private bool _isDemo;
-    private int _akaoPositionsOffset;
     private uint _firstAkaoOffset;
 
     public static Section1File Open(ReadOnlySpan<byte> data, bool japaneseText = false)
@@ -79,7 +78,6 @@ public sealed class Section1File
 
         var groupNamesOffset = cursor;
         var akaoPositionsOffset = groupNamesOffset + (8 * groupCount);
-        _akaoPositionsOffset = akaoPositionsOffset;
         var scriptOffsetsOffset = akaoPositionsOffset + (4 * AkaoCount);
         var scriptCount = isDemo ? 16 : 32;
         var scriptOffsetsSize = groupCount * scriptCount * 2;
@@ -91,36 +89,7 @@ public sealed class Section1File
             ? BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(akaoPositionsOffset, 4))
             : (uint)data.Length;
         _firstAkaoOffset = firstAkaoOffset;
-        var afterScripts = (int)Math.Min(firstAkaoOffset, TextSectionOffset);
-
-        for (var groupIndex = 0; groupIndex < groupCount; groupIndex++)
-        {
-            var groupName = ReadFixedLatin1(data.Slice(groupNamesOffset + (8 * groupIndex), 8));
-            var group = new GrpScript(groupName);
-            var positions = new ushort[scriptCount + 1];
-            var groupOffsetsStart = scriptOffsetsOffset + (groupIndex * scriptCount * 2);
-            for (var scriptIndex = 0; scriptIndex < scriptCount; scriptIndex++)
-            {
-                positions[scriptIndex] = BinaryPrimitives.ReadUInt16LittleEndian(
-                    data.Slice(groupOffsetsStart + (scriptIndex * 2), 2));
-            }
-
-            positions[scriptCount] = FindNextGroupStart(data, scriptOffsetsOffset, groupIndex, groupCount, scriptCount, positions[scriptCount - 1], afterScripts);
-
-            for (var scriptIndex = 0; scriptIndex < scriptCount; scriptIndex++)
-            {
-                var start = positions[scriptIndex];
-                var end = positions[scriptIndex + 1];
-                if (end <= start)
-                    continue;
-                if (start < scriptOffsetsOffset || end > data.Length)
-                    throw new InvalidDataException($"Section 1 script {groupIndex}:{scriptIndex} is out of range.");
-
-                group.SetScript(scriptIndex, new Script(data.Slice(start, end - start).ToArray()));
-            }
-
-            GrpScripts.Add(group);
-        }
+        LoadScripts(data, groupNamesOffset, scriptOffsetsOffset, groupCount, scriptCount, firstAkaoOffset);
 
         LoadTexts(data, TextSectionOffset, firstAkaoOffset);
         TutorialsAndSounds = TutorialFile.Open(data);
@@ -268,88 +237,148 @@ public sealed class Section1File
         }
     }
 
+    /// <summary>
+    /// Serializes the section. Unmodified sections return the original bytes; modified sections
+    /// are rebuilt exactly as <c>Section1File::save()</c> does: header, group names, AKAO/tutorial
+    /// offsets, script offsets, scripts, text table (each text terminated by 0xFF, word-padded
+    /// when AKAO/tutorial entries follow) and AKAO/tutorial blocks (AKAO blocks 4-byte aligned).
+    /// </summary>
+    /// <returns>The section 1 bytes.</returns>
+    /// <exception cref="InvalidDataException">Thrown when offsets overflow 16 bits.</exception>
+    /// <exception cref="NotSupportedException">Thrown when saving a modified PS demo (0x0301) section.</exception>
     public byte[] Save()
     {
         if (!IsModified)
             return RawData.ToArray();
 
-        var textStart = TextSectionOffset;
-        var oldTextEnd = _firstAkaoOffset >= textStart && _firstAkaoOffset <= RawData.Length
-            ? (int)_firstAkaoOffset
-            : RawData.Length;
-        var oldTextLength = oldTextEnd - textStart;
-        var newTextSection = BuildTextSection(Texts);
-        var delta = newTextSection.Length - oldTextLength;
+        if (_isDemo)
+            throw new NotSupportedException("Saving modified PlayStation demo (0x0301) script sections is not supported.");
 
-        var prefix = RawData[..textStart].ToArray();
-        ApplyCurrentScriptBytes(prefix);
-        var output = new byte[prefix.Length + newTextSection.Length + (RawData.Length - oldTextEnd)];
-        prefix.CopyTo(output, 0);
+        if (GrpScripts.Count > byte.MaxValue)
+            throw new InvalidDataException("Section 1 cannot contain more than 255 groups.");
 
-        if (delta != 0 && AkaoCount > 0)
-            ShiftAkaoOffsets(output.AsSpan(0, prefix.Length), oldTextEnd, delta);
-
-        newTextSection.CopyTo(output, textStart);
-        RawData.AsSpan(oldTextEnd).CopyTo(output.AsSpan(textStart + newTextSection.Length));
-        return output;
-    }
-
-    private void ApplyCurrentScriptBytes(byte[] prefix)
-    {
+        var tutorials = TutorialsAndSounds?.Entries.Select(static entry => entry.RawData).ToArray() ?? [];
         var groupCount = GrpScripts.Count;
-        var scriptCount = _isDemo ? 16 : 32;
-        var groupNamesOffset = _isDemo ? 24 : 32;
-        var scriptOffsetsOffset = groupNamesOffset + (groupCount * 8) + (AkaoCount * 4);
+        var akaoCount = tutorials.Length;
+        var posScripts = 32 + (groupCount * 72) + (akaoCount * 4);
 
-        for (var groupIndex = 0; groupIndex < groupCount; groupIndex++)
+        var groupNames = new List<byte>(groupCount * 8);
+        var scriptPositions = new List<byte>(groupCount * 64);
+        var allScripts = new List<byte>();
+        var pos32 = (uint)posScripts;
+        byte modelCount = 0;
+
+        foreach (var group in GrpScripts)
         {
-            var offsetsStart = scriptOffsetsOffset + (groupIndex * scriptCount * 2);
-            for (var scriptIndex = 0; scriptIndex < scriptCount; scriptIndex++)
+            groupNames.AddRange(FixedLatin1(group.Name, 8, forceTerminator: false));
+            for (var fileScript = 0; fileScript < 32; fileScript++)
             {
-                var offsetPosition = offsetsStart + (scriptIndex * 2);
-                if (offsetPosition + 2 > prefix.Length)
-                    return;
+                var script = group.ToByteArray(fileScript);
+                if (script.Length > 0)
+                    pos32 = (uint)(posScripts + allScripts.Count);
+                if (pos32 > ushort.MaxValue)
+                    throw new InvalidDataException("Section 1 script size overflow.");
 
-                var start = BinaryPrimitives.ReadUInt16LittleEndian(prefix.AsSpan(offsetPosition, 2));
-                var end = FindScriptEnd(prefix, scriptOffsetsOffset, groupIndex, scriptIndex, groupCount, scriptCount, start);
-                if (end <= start || end > prefix.Length)
-                    continue;
-
-                var scriptBytes = GrpScripts[groupIndex].Scripts[scriptIndex].Compile();
-                if (scriptBytes.Length != end - start)
-                    continue;
-
-                scriptBytes.CopyTo(prefix.AsSpan(start, scriptBytes.Length));
+                AddUInt16(scriptPositions, (ushort)pos32);
+                allScripts.AddRange(script);
             }
+
+            group.DetectType();
+            if (group.Type == GrpScriptType.Model)
+                modelCount++;
         }
+
+        var posTexts32 = posScripts + allScripts.Count;
+        if (posTexts32 > ushort.MaxValue)
+            throw new InvalidDataException("Section 1 script size overflow.");
+
+        if (Texts.Count > MaxTextCount)
+            throw new InvalidDataException($"Section 1 text count cannot exceed {MaxTextCount}.");
+
+        var textCount = Texts.Count;
+        var textPositions = new List<byte>(textCount * 2);
+        var allTexts = new List<byte>();
+        foreach (var text in Texts)
+        {
+            var position = 2 + (textCount * 2) + allTexts.Count;
+            if (position > ushort.MaxValue)
+                throw new InvalidDataException("Section 1 script + text size overflow.");
+
+            AddUInt16(textPositions, (ushort)position);
+            allTexts.AddRange(TextData(text));
+            allTexts.Add(0xFF);
+        }
+
+        var scriptsAndTextsSize = scriptPositions.Count + allScripts.Count + 2 + textPositions.Count + allTexts.Count;
+        if (scriptsAndTextsSize % 4 != 0 && akaoCount > 0)
+            allTexts.AddRange(new byte[4 - (scriptsAndTextsSize % 4)]);
+
+        var posAkaos = (uint)(posTexts32 + 2 + (textCount * 2) + allTexts.Count);
+        var akaoPositions = new List<byte>(akaoCount * 4);
+        var allAkaos = new List<byte>();
+        foreach (var tutorial in tutorials)
+        {
+            AddUInt32(akaoPositions, (uint)(posAkaos + allAkaos.Count));
+            allAkaos.AddRange(tutorial);
+            if (tutorial.AsSpan().StartsWith("AKAO"u8) && tutorial.Length % 4 != 0)
+                allAkaos.AddRange(new byte[4 - (tutorial.Length % 4)]);
+        }
+
+        var output = new List<byte>(posAkaos > 0 ? (int)posAkaos + allAkaos.Count : 0);
+        AddUInt16(output, Version);
+        output.Add((byte)groupCount);
+        output.Add(modelCount);
+        AddUInt16(output, (ushort)posTexts32);
+        AddUInt16(output, (ushort)akaoCount);
+        AddUInt16(output, Scale);
+        output.AddRange(new byte[6]);
+        output.AddRange(FixedLatin1(Author, 8, forceTerminator: true));
+        output.AddRange(FixedLatin1(MapName, 8, forceTerminator: true));
+        output.AddRange(groupNames);
+        output.AddRange(akaoPositions);
+        output.AddRange(scriptPositions);
+        output.AddRange(allScripts);
+        AddUInt16(output, (ushort)textCount);
+        output.AddRange(textPositions);
+        output.AddRange(allTexts);
+        output.AddRange(allAkaos);
+        return [.. output];
     }
 
-    private static int FindScriptEnd(
-        byte[] prefix,
-        int scriptOffsetsOffset,
-        int groupIndex,
-        int scriptIndex,
-        int groupCount,
-        int scriptCount,
-        ushort start)
+    /// <summary>
+    /// Returns the bytes <c>FF7String::data()</c> would hold: loaded texts keep their raw bytes up
+    /// to (not including) the 0xFF terminator; edited texts are encoded from their value.
+    /// </summary>
+    private byte[] TextData(FF7String text)
     {
-        for (var currentGroup = groupIndex; currentGroup < groupCount; currentGroup++)
-        {
-            var firstScript = currentGroup == groupIndex ? scriptIndex + 1 : 0;
-            var offsetsStart = scriptOffsetsOffset + (currentGroup * scriptCount * 2);
-            for (var currentScript = firstScript; currentScript < scriptCount; currentScript++)
-            {
-                var offsetPosition = offsetsStart + (currentScript * 2);
-                if (offsetPosition + 2 > prefix.Length)
-                    return prefix.Length;
+        if (text.RawBytes is { } raw)
+            return raw[..FF7TextCodec.FindTerminator(raw)];
 
-                var candidate = BinaryPrimitives.ReadUInt16LittleEndian(prefix.AsSpan(offsetPosition, 2));
-                if (candidate > start)
-                    return candidate;
-            }
-        }
+        return FF7TextCodec.Encode(text.Value, includeTerminator: false, japanese: JapaneseText);
+    }
 
-        return prefix.Length;
+    private static byte[] FixedLatin1(string value, int size, bool forceTerminator)
+    {
+        var buffer = new byte[size];
+        var bytes = Encoding.Latin1.GetBytes(value ?? string.Empty);
+        bytes.AsSpan(0, Math.Min(bytes.Length, size)).CopyTo(buffer);
+        if (forceTerminator)
+            buffer[size - 1] = 0;
+        return buffer;
+    }
+
+    private static void AddUInt16(List<byte> output, ushort value)
+    {
+        output.Add((byte)value);
+        output.Add((byte)(value >> 8));
+    }
+
+    private static void AddUInt32(List<byte> output, uint value)
+    {
+        output.Add((byte)value);
+        output.Add((byte)(value >> 8));
+        output.Add((byte)(value >> 16));
+        output.Add((byte)(value >> 24));
     }
 
     public int? ModelId(int grpScriptId)
@@ -358,25 +387,111 @@ public sealed class Section1File
         return null;
     }
 
-    private static ushort FindNextGroupStart(
+    /// <summary>
+    /// Port of the script part of <c>Section1File::open</c>, including its handling of empty
+    /// groups, the Android "after scripts" detection and the ownership of repeated pointers (a
+    /// script block belongs to the first slot of a run of identical pointers).
+    /// </summary>
+    private void LoadScripts(
         ReadOnlySpan<byte> data,
+        int groupNamesOffset,
         int scriptOffsetsOffset,
-        int groupIndex,
         int groupCount,
         int scriptCount,
-        ushort lastScriptStart,
-        int afterScripts)
+        uint posAkao)
     {
-        for (var nextGroup = groupIndex + 1; nextGroup < groupCount; nextGroup++)
-        {
-            var candidate = BinaryPrimitives.ReadUInt16LittleEndian(
-                data.Slice(scriptOffsetsOffset + (nextGroup * scriptCount * 2), 2));
-            if (candidate > lastScriptStart)
-                return candidate;
-        }
+        var posTexts = TextSectionOffset;
+        var posAfterScripts = (ushort)Math.Min(posAkao, posTexts);
+        var posAfterScriptsAndroid = -1;
+        if (posAkao < posTexts && posTexts + 4 < data.Length)
+            posAfterScriptsAndroid = data[..Math.Min((int)posAkao + 4, data.Length)]
+                .LastIndexOf(data.Slice(posTexts, 4));
 
-        return checked((ushort)afterScripts);
+        var positions = new ushort[scriptCount + 1];
+        var emptyGroups = 0;
+
+        ushort EndOfLastGroup(ushort lastStart) =>
+            posAfterScriptsAndroid >= lastStart ? (ushort)posAfterScriptsAndroid : posAfterScripts;
+
+        for (var groupIndex = 0; groupIndex < groupCount; groupIndex++)
+        {
+            var groupName = ReadFixedLatin1(data.Slice(groupNamesOffset + (8 * groupIndex), 8));
+            var group = new GrpScript(groupName);
+
+            if (emptyGroups > 1)
+            {
+                emptyGroups--;
+                GrpScripts.Add(group);
+                continue;
+            }
+
+            for (var scriptIndex = 0; scriptIndex < scriptCount; scriptIndex++)
+                positions[scriptIndex] = ReadPosition(data, scriptOffsetsOffset, scriptCount, groupIndex, scriptIndex);
+
+            var lastStart = positions[scriptCount - 1];
+            if (groupIndex == groupCount - 1)
+            {
+                positions[scriptCount] = EndOfLastGroup(lastStart);
+            }
+            else
+            {
+                var next = ReadPosition(data, scriptOffsetsOffset, scriptCount, groupIndex + 1, 0);
+                if (next > lastStart)
+                {
+                    positions[scriptCount] = next;
+                }
+                else
+                {
+                    emptyGroups = 1;
+                    while (next <= lastStart && groupIndex + emptyGroups < groupCount - 1)
+                    {
+                        next = ReadPosition(data, scriptOffsetsOffset, scriptCount, groupIndex + emptyGroups + 1, 0);
+                        emptyGroups++;
+                    }
+
+                    positions[scriptCount] = groupIndex + emptyGroups == groupCount
+                        ? EndOfLastGroup(lastStart)
+                        : next;
+                }
+            }
+
+            var slot = 0;
+            for (var scriptIndex = 0; scriptIndex < scriptCount; scriptIndex++)
+            {
+                var start = positions[scriptIndex];
+                var end = positions[scriptIndex + 1];
+                if (end <= start)
+                    continue;
+                if (end > data.Length)
+                    throw new InvalidDataException($"Section 1 script {groupIndex}:{scriptIndex} is out of range.");
+
+                var bytes = data.Slice(start, end - start);
+                if (slot == 0)
+                {
+                    var (init, main) = Script.SplitAtReturn(bytes);
+                    group.SetScript(0, new Script(init));
+                    group.SetScript(1, new Script(main));
+                }
+                else
+                {
+                    group.SetScript(slot + 1, new Script(bytes.ToArray()));
+                }
+
+                slot = scriptIndex + 1;
+            }
+
+            GrpScripts.Add(group);
+        }
     }
+
+    private static ushort ReadPosition(
+        ReadOnlySpan<byte> data,
+        int scriptOffsetsOffset,
+        int scriptCount,
+        int groupIndex,
+        int scriptIndex) =>
+        BinaryPrimitives.ReadUInt16LittleEndian(
+            data.Slice(scriptOffsetsOffset + (((groupIndex * scriptCount) + scriptIndex) * 2), 2));
 
     private void LoadTexts(ReadOnlySpan<byte> data, int posTexts, uint posAkao)
     {
@@ -427,51 +542,4 @@ public sealed class Section1File
         return Encoding.Latin1.GetString(bytes[..length]);
     }
 
-    private void ShiftAkaoOffsets(Span<byte> prefix, int oldTextEnd, int delta)
-    {
-        for (var index = 0; index < AkaoCount; index++)
-        {
-            var offset = _akaoPositionsOffset + (index * 4);
-            if (offset + 4 > prefix.Length)
-                return;
-
-            var value = BinaryPrimitives.ReadUInt32LittleEndian(prefix.Slice(offset, 4));
-            if (value < oldTextEnd)
-                continue;
-
-            BinaryPrimitives.WriteUInt32LittleEndian(
-                prefix.Slice(offset, 4),
-                checked((uint)(value + delta)));
-        }
-    }
-
-    private static byte[] BuildTextSection(IReadOnlyList<FF7String> texts)
-    {
-        if (texts.Count > MaxTextCount)
-            throw new InvalidDataException($"Section 1 text count cannot exceed {MaxTextCount}.");
-
-        var encodedTexts = texts
-            .Select(static text => FF7TextCodec.Encode(text.Value))
-            .ToArray();
-        var tableSize = 2 + (encodedTexts.Length * 2);
-        var totalSize = tableSize + encodedTexts.Sum(static text => text.Length);
-        if (totalSize > ushort.MaxValue)
-            throw new InvalidDataException("Section 1 text table is too large.");
-
-        using var stream = new MemoryStream(totalSize);
-        using var writer = new BinaryWriter(stream, Encoding.Latin1, leaveOpen: true);
-
-        writer.Write(checked((ushort)texts.Count));
-        var offset = checked((ushort)tableSize);
-        foreach (var encoded in encodedTexts)
-        {
-            writer.Write(offset);
-            offset = checked((ushort)(offset + encoded.Length));
-        }
-
-        foreach (var encoded in encodedTexts)
-            writer.Write(encoded);
-
-        return stream.ToArray();
-    }
 }

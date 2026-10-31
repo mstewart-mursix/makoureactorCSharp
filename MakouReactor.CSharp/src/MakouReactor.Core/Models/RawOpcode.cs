@@ -123,7 +123,7 @@ public static class RawOpcodeReader
         while (offset < scriptData.Length)
         {
             var id = scriptData[offset];
-            var declaredSize = Lengths[id];
+            var declaredSize = DeclaredSize(scriptData[offset..]);
             var availableSize = Math.Min(declaredSize, scriptData.Length - offset);
             opcodes.Add(new RawOpcode(
                 offset,
@@ -143,4 +143,47 @@ public static class RawOpcodeReader
 
         return opcodes;
     }
+
+    /// <summary>
+    /// Returns the encoded size of the opcode starting at <paramref name="opcodeData"/>, mirroring
+    /// <c>Opcode::fixedSize()</c> and <c>Opcode::size()</c> in <c>src/core/field/Opcode.cpp</c>.
+    /// </summary>
+    /// <param name="opcodeData">Bytes starting at the opcode id; may be truncated.</param>
+    /// <returns>The declared size in bytes (at least 1).</returns>
+    public static int DeclaredSize(ReadOnlySpan<byte> opcodeData)
+    {
+        if (opcodeData.IsEmpty)
+            return 1;
+
+        var id = opcodeData[0];
+        int size = Lengths[id];
+
+        switch (id)
+        {
+            case SpecialOpcode when opcodeData.Length > 1:
+                size += opcodeData[1] switch
+                {
+                    0xF5 or 0xF6 or 0xF7 or 0xFB or 0xFC => 1, // ARROW, PNAME, GMSPD, BTLCK, MVLCK
+                    0xF8 or 0xFD => 2,                         // SMSPD, SPCNM
+                    _ => 0,
+                };
+                break;
+            case Unused1COpcode:
+                // id, u32 address, u8 subSize, then min(subSize, 128) bytes.
+                var subSize = opcodeData.Length > 5 ? opcodeData[5] : (byte)0;
+                size += Math.Min((int)subSize, 128);
+                break;
+            case KawaiOpcode:
+                // The second byte is the total opcode size; Opcode::size() uses max(opcodeSize, 1).
+                var opcodeSize = opcodeData.Length > 1 ? opcodeData[1] : (byte)0;
+                size = Math.Max((int)opcodeSize, 1);
+                break;
+        }
+
+        return size;
+    }
+
+    private const byte SpecialOpcode = 0x0F;
+    private const byte Unused1COpcode = 0x1C;
+    private const byte KawaiOpcode = 0x28;
 }
