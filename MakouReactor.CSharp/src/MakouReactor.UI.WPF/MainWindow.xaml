@@ -95,6 +95,8 @@
             </ToolBar>
         </ToolBarTray>
 
+        <shell:CodexSetupBanner x:Name="CodexBanner" DockPanel.Dock="Top"/>
+
         <StatusBar DockPanel.Dock="Bottom">
             <StatusBarItem>
                 <TextBlock x:Name="StatusLabel" Text="Ready"/>

@@ -225,10 +225,11 @@ public static class Program
         var cmd = new Command("doctor", "Check the LLM backend configuration (Codex CLI presence, config values)");
         cmd.AddOption(configOpt);
 
-        cmd.SetHandler((InvocationContext ctx) =>
+        cmd.SetHandler(async (InvocationContext ctx) =>
         {
             var config = LLMConfigLoader.Load(ctx.ParseResult.GetValueForOption(configOpt));
             Console.WriteLine($"Backend:          {config.Backend}");
+            Console.WriteLine($"Repair attempts:  {config.MaxRepairAttempts}");
 
             if (config.Backend == "http")
             {
@@ -241,17 +242,18 @@ public static class Program
             Console.WriteLine($"Codex executable: {config.CodexExecutable}");
             Console.WriteLine($"Codex model:      {(string.IsNullOrEmpty(config.CodexModel) ? "(CLI default)" : config.CodexModel)}");
 
-            var resolved = CodexCliBackend.ResolveExecutable(config.CodexExecutable);
-            if (resolved == null)
-            {
-                Console.WriteLine("Status:           NOT FOUND — install with 'npm i -g @openai/codex', then run 'codex login'");
-                ctx.ExitCode = 1;
-                return;
-            }
+            var status = await CodexSetupChecker.CheckAsync(config.CodexExecutable);
+            if (status.ResolvedPath != null)
+                Console.WriteLine($"Resolved path:    {status.ResolvedPath}");
 
-            Console.WriteLine($"Resolved path:    {resolved}");
-            Console.WriteLine("Status:           OK (run 'codex login status' to verify subscription auth)");
-            ctx.ExitCode = 0;
+            Console.WriteLine(status.State switch
+            {
+                CodexSetupState.Ready => $"Status:           OK - {status.Detail}",
+                CodexSetupState.NotInstalled => $"Status:           NOT FOUND - {status.Detail}",
+                CodexSetupState.NotLoggedIn => $"Status:           NOT LOGGED IN - {status.Detail}",
+                _ => $"Status:           CHECK FAILED - {status.Detail}",
+            });
+            ctx.ExitCode = status.State == CodexSetupState.Ready ? 0 : 1;
         });
 
         return cmd;

@@ -97,6 +97,20 @@ public partial class MainWindow : Window
         ApplySettings();
         RefreshRecentFilesMenu();
         SetArchiveOpenState(false);
+        Loaded += MainWindow_Loaded;
+    }
+
+    /// <summary>
+    /// Start the Codex setup check once the window is up. Only in the real application (tests
+    /// construct the window without <see cref="App"/>), and only for the Codex backend.
+    /// </summary>
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        Loaded -= MainWindow_Loaded;
+        if (Application.Current is not App || !string.Equals(_settings.Llm.Backend, "codex", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await CodexBanner.CheckAsync(_settings.Llm.CodexExecutable);
     }
 
     private void WireFieldListView()
