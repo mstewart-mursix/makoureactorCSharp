@@ -76,9 +76,44 @@ public sealed class ValidationResult
 /// </summary>
 public sealed class ApplyOptions
 {
+    /// <summary>
+    /// When true (the default) the mapper computes the full result (groups, scripts, opcode
+    /// counts, text additions, warnings) without modifying the field.
+    /// </summary>
     public bool PreviewOnly { get; init; } = true;
+
+    /// <summary>
+    /// Name for the generated director group. It is sanitized, cut to the 8-character group name
+    /// limit and made unique within the field.
+    /// </summary>
     public string? GroupNameOverride { get; init; }
+
+    /// <summary>
+    /// Variable bank (1-15) for the bits that back <c>set_flag</c>/<c>if_flag</c> keys. Defaults to
+    /// bank 8, one of the banks the C++ reference documents as temporary, not stored in the save
+    /// (<c>src/widgets/VarManager.cpp</c>: "Var banks 08, 09 and 10 are temporary").
+    /// </summary>
+    public byte FlagBank { get; init; } = 8;
 }
+
+/// <summary>A dialogue text appended to the field's text table by the mapper.</summary>
+/// <param name="TextId">Text index in Section 1.</param>
+/// <param name="Text">Decoded text, including any automatic line breaks.</param>
+public sealed record AppliedText(int TextId, string Text);
+
+/// <summary>One script slot emitted by the mapper.</summary>
+/// <param name="Slot">Script slot (0 = "S0 - Init", 1 = "S0 - Main", N + 1 = file script N).</param>
+/// <param name="Label">Display label of the slot.</param>
+/// <param name="Bytes">Compiled script bytes.</param>
+/// <param name="Opcodes">Opcode names in emission order.</param>
+public sealed record AppliedScript(int Slot, string Label, byte[] Bytes, IReadOnlyList<string> Opcodes);
+
+/// <summary>A script group created by the mapper.</summary>
+/// <param name="GroupIndex">Index of the group in the field once applied.</param>
+/// <param name="Name">Group name (at most 8 characters, unique within the field).</param>
+/// <param name="Role">"director" or the plan actor id the group represents.</param>
+/// <param name="Scripts">Non-empty script slots.</param>
+public sealed record AppliedGroup(int GroupIndex, string Name, string Role, IReadOnlyList<AppliedScript> Scripts);
 
 /// <summary>
 /// Result of applying a scene plan to a field.
@@ -90,6 +125,24 @@ public sealed class ApplyResult
     public string GroupName { get; init; } = string.Empty;
     public string Summary { get; init; } = string.Empty;
     public string Error { get; init; } = string.Empty;
+
+    /// <summary>True when the result was computed without modifying the field.</summary>
+    public bool PreviewOnly { get; init; }
+
+    /// <summary>Script groups created (or, for a preview, that would be created).</summary>
+    public IReadOnlyList<AppliedGroup> Groups { get; init; } = Array.Empty<AppliedGroup>();
+
+    /// <summary>Texts appended to the field's text table.</summary>
+    public IReadOnlyList<AppliedText> TextsAdded { get; init; } = Array.Empty<AppliedText>();
+
+    /// <summary>Emitted opcode counts by opcode name, over all groups.</summary>
+    public IReadOnlyDictionary<string, int> OpcodeCounts { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>Things the mapper could not emit faithfully (skipped steps, approximations).</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+
+    /// <summary><c>custom_note</c> texts, recorded instead of emitted.</summary>
+    public IReadOnlyList<string> Notes { get; init; } = Array.Empty<string>();
 
     public static ApplyResult Success(string groupName, string summary) =>
         new() { Ok = true, GroupName = groupName, Summary = summary };

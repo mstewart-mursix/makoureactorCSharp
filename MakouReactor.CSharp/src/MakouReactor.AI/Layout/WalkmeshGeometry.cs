@@ -48,7 +48,44 @@ public static class WalkmeshGeometry
     }
 
     /// <summary>
-    /// The walkable point closest to <paramref name="p"/>: <paramref name="p"/> itself when already
+    /// Finds the first triangle containing <paramref name="p"/> and the floor height (Z) at that
+    /// point, interpolated over the triangle's vertices. Returns false when no triangle contains it.
+    /// </summary>
+    public static bool TryLocate(IdFile walkmesh, Point p, out int triangleId, out short z)
+    {
+        for (var index = 0; index < walkmesh.Triangles.Count; index++)
+        {
+            var t = walkmesh.Triangles[index];
+            if (!TriangleContains(t, p.X, p.Y))
+                continue;
+
+            var v = t.Vertices;
+            var area = SignedArea2(t);
+            double height;
+            if (area == 0)
+            {
+                height = (v[0].Z + v[1].Z + v[2].Z) / 3.0;
+            }
+            else
+            {
+                var w0 = Cross(v[1].X, v[1].Y, v[2].X, v[2].Y, p.X, p.Y) / area;
+                var w1 = Cross(v[2].X, v[2].Y, v[0].X, v[0].Y, p.X, p.Y) / area;
+                var w2 = 1 - w0 - w1;
+                height = (w0 * v[0].Z) + (w1 * v[1].Z) + (w2 * v[2].Z);
+            }
+
+            triangleId = index;
+            z = (short)Math.Clamp(Math.Round(height), short.MinValue, short.MaxValue);
+            return true;
+        }
+
+        triangleId = -1;
+        z = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// The walkable point closest to <paramref name="p"/>:<paramref name="p"/> itself when already
     /// walkable, otherwise the nearest point on the nearest triangle, rounded to integer
     /// coordinates that are verified to be walkable.
     /// </summary>
