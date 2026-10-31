@@ -1,6 +1,7 @@
 using System;
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -9,6 +10,7 @@ using MakouReactor.AI.Backends;
 using MakouReactor.AI.Config;
 using MakouReactor.AI.Parsing;
 using MakouReactor.AI.Validation;
+using MakouReactor.Core.IO;
 using MakouReactor.Core.Models;
 
 namespace MakouReactor.CLI;
@@ -44,6 +46,8 @@ public static class Program
         var noDialogOpt = new Option<bool>("--no-dialog", "Skip dialogue generation");
         var noLayoutOpt = new Option<bool>("--no-layout", "Skip layout generation");
         var noScriptsOpt = new Option<bool>("--no-scripts", "Skip event script generation");
+        var archiveOpt = new Option<string?>("--archive", "flevel.lgp (or field directory) to read field context from; requires --field");
+        var fieldOpt = new Option<string?>("--field", "Field name inside --archive whose walkmesh, groups, dialog and exits are described to the model");
 
         var cmd = new Command("generate", "Generate a scene plan from a prompt via the configured LLM backend");
         cmd.AddOption(promptOpt);
@@ -55,6 +59,8 @@ public static class Program
         cmd.AddOption(noDialogOpt);
         cmd.AddOption(noLayoutOpt);
         cmd.AddOption(noScriptsOpt);
+        cmd.AddOption(archiveOpt);
+        cmd.AddOption(fieldOpt);
 
         cmd.SetHandler(async (InvocationContext ctx) =>
         {
@@ -72,11 +78,17 @@ public static class Program
             var width = parse.GetValueForOption(widthOpt);
             var height = parse.GetValueForOption(heightOpt);
 
+            if (!TryLoadField(parse.GetValueForOption(archiveOpt), parse.GetValueForOption(fieldOpt), out var field))
+            {
+                ctx.ExitCode = 1;
+                return;
+            }
+
             using var service = new SceneGenerationService(config);
 
             if (parse.GetValueForOption(dryRunOpt))
             {
-                var request = service.BuildRequest(scenePrompt, width, height);
+                var request = service.BuildRequest(scenePrompt, width, height, field);
                 Console.WriteLine($"# Backend: {config.Backend}");
                 Console.WriteLine("# --- System prompt ---");
                 Console.WriteLine(request.SystemPrompt);
@@ -87,7 +99,7 @@ public static class Program
             }
 
             Console.Error.WriteLine($"Generating via '{config.Backend}' backend...");
-            var result = await service.GenerateAsync(scenePrompt, field: null, width, height);
+            var result = await service.GenerateAsync(scenePrompt, field, width, height);
             PrintAttempts(result);
 
             if (!result.Ok)
@@ -114,6 +126,40 @@ public static class Program
         });
 
         return cmd;
+    }
+
+    /// <summary>
+    /// Load the field named by <c>--field</c> from <c>--archive</c>. Both absent is fine (no field
+    /// context); one without the other, or a load failure, is reported and returns false.
+    /// </summary>
+    private static bool TryLoadField(string? archivePath, string? fieldName, out Field? field)
+    {
+        field = null;
+        if (archivePath == null && fieldName == null)
+            return true;
+
+        if (archivePath == null || string.IsNullOrWhiteSpace(fieldName))
+        {
+            Console.Error.WriteLine("--archive and --field must be used together.");
+            return false;
+        }
+
+        try
+        {
+            var archive = Directory.Exists(archivePath)
+                ? FieldArchive.OpenPcDirectory(archivePath)
+                : FieldArchive.Open(archivePath);
+            field = archive.OpenField(fieldName);
+            Console.Error.WriteLine($"Using field context from '{fieldName}' in {archivePath}");
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException
+                                       or KeyNotFoundException or ArgumentException or InvalidOperationException
+                                       or NotSupportedException)
+        {
+            Console.Error.WriteLine($"Could not open field '{fieldName}' from {archivePath}: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>Report automatic repair attempts (silent when the first answer was accepted).</summary>

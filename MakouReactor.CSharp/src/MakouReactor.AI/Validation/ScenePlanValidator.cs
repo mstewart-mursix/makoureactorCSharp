@@ -56,9 +56,7 @@ public static class ScenePlanValidator
             else if (!seen.Add(a.Id))
                 Add(out_, Severity.Error, $"{path}.id", $"Duplicate actor id '{a.Id}'");
 
-            if (!bounds.Contains(a.Position))
-                Add(out_, Severity.Warn, $"{path}.position",
-                    $"Position out of bounds ({a.Position.X},{a.Position.Y})");
+            CheckPlacement(out_, $"{path}.position", "Position", a.Position, bounds, LayoutGenerator.WalkmeshOf(field));
 
             if (a.Facing.HasValue && !IsFaceDir(a.Facing.Value))
                 Add(out_, Severity.Warn, $"{path}.facing",
@@ -93,6 +91,7 @@ public static class ScenePlanValidator
     private static void ValidateEvents(ScenePlan plan, Field? field, ValidationOptions opts, List<Issue> out_)
     {
         var bounds = LayoutGenerator.FieldBounds(field);
+        var walkmesh = LayoutGenerator.WalkmeshOf(field);
         var actorIds = CollectActorIds(plan);
 
         for (int i = 0; i < plan.Events.Count; i++)
@@ -108,13 +107,13 @@ public static class ScenePlanValidator
             {
                 var s = e.Steps[j];
                 var spath = $"{epath}.steps[{j}]";
-                ValidateStep(s, spath, actorIds, bounds, opts, out_);
+                ValidateStep(s, spath, actorIds, bounds, walkmesh, opts, out_);
             }
         }
     }
 
     private static void ValidateStep(EventStep s, string spath, HashSet<string> actorIds,
-                                     Rect bounds, ValidationOptions opts, List<Issue> out_)
+                                     Rect bounds, IdFile? walkmesh, ValidationOptions opts, List<Issue> out_)
     {
         switch (s.Type)
         {
@@ -126,6 +125,13 @@ public static class ScenePlanValidator
                 break;
 
             case EventStepType.Move:
+                if (!actorIds.Contains(s.ActorId))
+                    Add(out_, Severity.Error, $"{spath}.actorId", $"Unknown actor '{s.ActorId}'");
+                // Moves are only checked against a real walkmesh; screen-space plans keep their old behaviour.
+                if (walkmesh != null)
+                    CheckPlacement(out_, $"{spath}.to", "Move target", s.To, bounds, walkmesh);
+                break;
+
             case EventStepType.Face:
                 if (!actorIds.Contains(s.ActorId))
                     Add(out_, Severity.Error, $"{spath}.actorId", $"Unknown actor '{s.ActorId}'");
@@ -151,8 +157,8 @@ public static class ScenePlanValidator
                     Add(out_, Severity.Error, $"{spath}.key", "Empty flag key");
 
                 // Recursively validate nested then/else branches with inherited bounds
-                ValidateNestedSteps(s.ThenSteps, $"{spath}.then", out_, opts, actorIds, bounds);
-                ValidateNestedSteps(s.ElseSteps, $"{spath}.else", out_, opts, actorIds, bounds);
+                ValidateNestedSteps(s.ThenSteps, $"{spath}.then", out_, opts, actorIds, bounds, walkmesh);
+                ValidateNestedSteps(s.ElseSteps, $"{spath}.else", out_, opts, actorIds, bounds, walkmesh);
                 break;
 
             case EventStepType.GiveItem:
@@ -179,13 +185,13 @@ public static class ScenePlanValidator
     /// </summary>
     private static void ValidateNestedSteps(List<EventStep> steps, string prefix,
                                             List<Issue> out_, ValidationOptions opts, HashSet<string> actorIds,
-                                            Rect bounds)
+                                            Rect bounds, IdFile? walkmesh)
     {
         for (int i = 0; i < steps.Count; i++)
         {
             var s = steps[i];
             var nestedPath = $"{prefix}[{i}]";
-            ValidateStep(s, nestedPath, actorIds, bounds, opts, out_);
+            ValidateStep(s, nestedPath, actorIds, bounds, walkmesh, opts, out_);
         }
     }
 
@@ -196,18 +202,37 @@ public static class ScenePlanValidator
     private static void ValidateLayout(ScenePlan plan, Field? field, List<Issue> out_)
     {
         var bounds = LayoutGenerator.FieldBounds(field);
+        var walkmesh = LayoutGenerator.WalkmeshOf(field);
 
-        if (!bounds.Contains(plan.Layout.SpawnPoint))
-            Add(out_, Severity.Warn, "layout.spawnPoint",
-                $"Spawn point out of bounds ({plan.Layout.SpawnPoint.X},{plan.Layout.SpawnPoint.Y})");
+        CheckPlacement(out_, "layout.spawnPoint", "Spawn point", plan.Layout.SpawnPoint, bounds, walkmesh);
 
         for (int i = 0; i < plan.Layout.Props.Count; i++)
         {
             var p = plan.Layout.Props[i];
-            if (!bounds.Contains(p.Position))
-                Add(out_, Severity.Warn, $"layout.props[{i}].position",
-                    $"Prop '{p.Id}' out of bounds ({p.Position.X},{p.Position.Y})");
+            CheckPlacement(out_, $"layout.props[{i}].position", $"Prop '{p.Id}'", p.Position, bounds, walkmesh);
         }
+    }
+
+    /// <summary>
+    /// With a walkmesh, an off-mesh point is an Error (an NPC placed there would be stuck or
+    /// invisible), phrased so it can be fed back to the model verbatim. Without one, an
+    /// out-of-bounds point is a Warn, as before.
+    /// </summary>
+    private static void CheckPlacement(List<Issue> out_, string path, string what, Point pt, Rect bounds, IdFile? walkmesh)
+    {
+        if (walkmesh != null)
+        {
+            if (!WalkmeshGeometry.Contains(walkmesh, pt))
+            {
+                var near = WalkmeshGeometry.NearestWalkable(walkmesh, pt);
+                Add(out_, Severity.Error, path,
+                    $"{what} ({pt.X},{pt.Y}) is not on the walkmesh; nearest walkable point is ({near.X},{near.Y})");
+            }
+            return;
+        }
+
+        if (!bounds.Contains(pt))
+            Add(out_, Severity.Warn, path, $"{what} out of bounds ({pt.X},{pt.Y})");
     }
 
     // -----------------------------------------------------------------------

@@ -72,10 +72,16 @@ public static class PromptBuilder
           | { type:"custom_note"; text:string };
         """;
 
+    /// <summary>Instruction placed directly under the <c>Field Context:</c> heading.</summary>
+    public const string FieldContextInstruction =
+        "Place all positions inside the walkable region described below. Do not reuse existing group names.";
+
     /// <summary>
     /// Build the user prompt from a <see cref="ScenePrompt"/> and field size hints.
+    /// When <paramref name="fieldContext"/> is provided (see <see cref="FieldContextBuilder"/>),
+    /// it is inserted under a <c>Field Context:</c> heading and positions switch to field coordinates.
     /// </summary>
-    public static string UserPrompt(ScenePrompt p, int widthPx, int heightPx)
+    public static string UserPrompt(ScenePrompt p, int widthPx, int heightPx, string? fieldContext = null)
     {
         var lines = new System.Collections.Generic.List<string>();
 
@@ -92,6 +98,17 @@ public static class PromptBuilder
         lines.Add("- Avoid overlapping placements; respect basic walkable regions if mentioned.");
         lines.Add("- Keep result coherent and lore-friendly.");
         lines.Add(string.Empty);
+
+        if (!string.IsNullOrWhiteSpace(fieldContext))
+        {
+            lines.Add("Field Context:");
+            lines.Add(FieldContextInstruction);
+            lines.Add("All positions (actors, props, spawnPoint, move targets, trigger zones) use the field coordinates below, not screen pixels.");
+            lines.Add(string.Empty);
+            lines.Add(fieldContext.Trim());
+            lines.Add(string.Empty);
+        }
+
         lines.Add(SchemaText());
 
         return string.Join('\n', lines);

@@ -109,9 +109,23 @@ public sealed class SceneGenerationService : IDisposable
 
     /// <summary>
     /// Compose the <see cref="LLMRequest"/> for a scene prompt without sending it.
+    /// When <paramref name="field"/> is given, a <see cref="FieldContextBuilder"/> description is
+    /// included and, if the field has a walkmesh, the size hint becomes its bounding box.
     /// </summary>
-    public LLMRequest BuildRequest(ScenePrompt prompt, int widthPx = 320, int heightPx = 240)
+    public LLMRequest BuildRequest(ScenePrompt prompt, int widthPx = 320, int heightPx = 240, Field? field = null)
     {
+        string? fieldContext = null;
+        if (field != null)
+        {
+            fieldContext = FieldContextBuilder.Describe(field);
+            if (LayoutGenerator.WalkmeshOf(field) != null)
+            {
+                var bounds = LayoutGenerator.FieldBounds(field);
+                widthPx = bounds.Width;
+                heightPx = bounds.Height;
+            }
+        }
+
         var isCodex = _config.Backend != "http";
         var model = isCodex ? _config.CodexModel : _config.Model;
 
@@ -127,7 +141,7 @@ public sealed class SceneGenerationService : IDisposable
             Temperature = prompt.Temperature,
             MaxTokens = prompt.MaxTokens,
             SystemPrompt = PromptBuilder.SystemPrompt(),
-            UserPrompt = PromptBuilder.UserPrompt(prompt, widthPx, heightPx),
+            UserPrompt = PromptBuilder.UserPrompt(prompt, widthPx, heightPx, fieldContext),
             TimeoutMs = timeout
         };
     }
@@ -147,7 +161,7 @@ public sealed class SceneGenerationService : IDisposable
     public async Task<SceneGenerationResult> GenerateAsync(ScenePrompt prompt, Field? field = null,
                                                            int widthPx = 320, int heightPx = 240)
     {
-        var originalRequest = BuildRequest(prompt, widthPx, heightPx);
+        var originalRequest = BuildRequest(prompt, widthPx, heightPx, field);
         var maxAttempts = 1 + Math.Max(0, _config.MaxRepairAttempts);
         var attempts = new List<GenerationAttempt>();
 

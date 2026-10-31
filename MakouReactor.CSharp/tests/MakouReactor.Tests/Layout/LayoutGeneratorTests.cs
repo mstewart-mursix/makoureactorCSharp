@@ -29,7 +29,7 @@ public class LayoutGeneratorTests
     }
 
     [Fact]
-    public void field_bounds_ignores_field_instance()
+    public void field_bounds_defaults_to_screen_without_walkmesh()
     {
         var field = new TestField("test");
         var bounds = LayoutGenerator.FieldBounds(field);

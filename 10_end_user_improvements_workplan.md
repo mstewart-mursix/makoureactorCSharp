@@ -183,6 +183,16 @@ the emitted byte structure decodes back (via the 1c reader) to the same opcodes;
 
 ## Phase 2 — Field context in the prompt
 
+> **Status: implemented.** `FieldContextBuilder.Describe` (walkmesh bounds/centroid/coverage,
+> 16×12 occupancy grid, groups, exits, sample dialog; deterministic, size-capped);
+> `PromptBuilder.UserPrompt(..., fieldContext)`; `SceneGenerationService.BuildRequest/GenerateAsync`
+> pass it when a field is given; CLI `generate --archive <lgp|dir> --field <name>`.
+> Coordinate convention: **with a walkmesh, plan positions are field X/Y coordinates** and
+> `LayoutGenerator.FieldBounds` is the walkmesh bounding box (`WalkmeshGeometry`); without one,
+> the 320×240 screen fallback is unchanged. `LayoutGenerator.Adjust` moves off-mesh spawn/props/
+> actors to the nearest walkable point; `ScenePlanValidator` reports off-mesh positions and move
+> targets as Errors (which feed the Phase 3 repair loop). Tests: `tests/MakouReactor.Tests/Prompts/FieldContextTests.cs`.
+
 Generation currently runs blind (`field: null`, width/height guesses). Feed the model
 reality; this is the biggest output-quality lever.
 
