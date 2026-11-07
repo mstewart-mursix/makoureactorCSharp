@@ -299,6 +299,25 @@ public class FieldPCTests
         field.GetSectionData(FieldSection.ModelLoader).Should().Equal(sections[2]);
     }
 
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(0xFFFFFFu)]
+    public void section_size_comes_from_layout_not_stored_size_header(uint bogusHeaderSize)
+    {
+        var sections = Enumerable.Range(1, 9)
+            .Select(index => Enumerable.Repeat((byte)index, index + 3).ToArray())
+            .ToArray();
+        var data = BuildPcField(sections);
+        // Corrupt the stored size header of section 3 (model loader slot).
+        var storedOffset = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(6 + (2 * 4), 4));
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(storedOffset, 4), bogusHeaderSize);
+
+        var field = FieldPC.OpenDecompressed("md1stin", data);
+
+        field.GetSectionData(FieldSection.ModelLoader).Should().Equal(sections[2]);
+        field.SaveDecompressed().Should().Equal(data);
+    }
+
     private static byte[] BuildPcField(IReadOnlyList<byte[]> sections)
     {
         sections.Should().HaveCount(9);

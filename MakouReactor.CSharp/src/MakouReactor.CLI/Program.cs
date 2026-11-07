@@ -3,6 +3,7 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 using MakouReactor.AI;
@@ -32,6 +33,7 @@ public static class Program
         root.AddCommand(BuildGenerateCommand());
         root.AddCommand(BuildValidateCommand());
         root.AddCommand(BuildDoctorCommand());
+        root.AddCommand(BuildInspectCommand());
         root.AddCommand(BuildApplyCommand());
         root.AddCommand(BuildRevertCommand());
         root.AddCommand(BuildBatchCommand());
@@ -49,12 +51,12 @@ public static class Program
         var widthOpt = new Option<int>("--width", () => 320, "Field width hint in pixels");
         var heightOpt = new Option<int>("--height", () => 240, "Field height hint in pixels");
         var outOpt = new Option<string?>("--out", "Write the generated scene-plan JSON to this file (default: stdout)");
+        var archiveOpt = new Option<string?>("--archive", "flevel.lgp to read field context from (use with --field)");
+        var fieldOpt = new Option<string?>("--field", "Field name inside --archive to describe to the model");
         var dryRunOpt = new Option<bool>("--dry-run", "Print the composed prompt without calling the LLM");
         var noDialogOpt = new Option<bool>("--no-dialog", "Skip dialogue generation");
         var noLayoutOpt = new Option<bool>("--no-layout", "Skip layout generation");
         var noScriptsOpt = new Option<bool>("--no-scripts", "Skip event script generation");
-        var archiveOpt = new Option<string?>("--archive", "flevel.lgp (or field directory) to read field context from; requires --field");
-        var fieldOpt = new Option<string?>("--field", "Field name inside --archive whose walkmesh, groups, dialog and exits are described to the model");
 
         var cmd = new Command("generate", "Generate a scene plan from a prompt via the configured LLM backend");
         cmd.AddOption(promptOpt);
@@ -62,12 +64,12 @@ public static class Program
         cmd.AddOption(widthOpt);
         cmd.AddOption(heightOpt);
         cmd.AddOption(outOpt);
+        cmd.AddOption(archiveOpt);
+        cmd.AddOption(fieldOpt);
         cmd.AddOption(dryRunOpt);
         cmd.AddOption(noDialogOpt);
         cmd.AddOption(noLayoutOpt);
         cmd.AddOption(noScriptsOpt);
-        cmd.AddOption(archiveOpt);
-        cmd.AddOption(fieldOpt);
 
         cmd.SetHandler(async (InvocationContext ctx) =>
         {
@@ -267,6 +269,82 @@ public static class Program
     }
 
     // -----------------------------------------------------------------------
+    // inspect
+    // -----------------------------------------------------------------------
+
+    private static Command BuildInspectCommand()
+    {
+        var archiveArg = new Argument<string>("archive", "Path to flevel.lgp (or another PC field LGP)");
+        var fieldOpt = new Option<string?>("--field", "Only inspect this field (default: every field)");
+        var cmd = new Command("inspect", "Open an archive and report exactly which fields/sections fail to parse");
+        cmd.AddArgument(archiveArg);
+        cmd.AddOption(fieldOpt);
+
+        cmd.SetHandler((InvocationContext ctx) =>
+        {
+            var path = ctx.ParseResult.GetValueForArgument(archiveArg);
+            var only = ctx.ParseResult.GetValueForOption(fieldOpt);
+            ctx.ExitCode = Inspect(path, only, Console.Out, Console.Error);
+        });
+
+        return cmd;
+    }
+
+    /// <summary>
+    /// Opens <paramref name="path"/> and writes a parse report. Returns 0 when everything
+    /// parsed, 1 when the archive cannot be opened, 2 when some field or section failed.
+    /// </summary>
+    internal static int Inspect(string path, string? onlyField, TextWriter output, TextWriter error)
+    {
+        FieldArchive archive;
+        try
+        {
+            archive = FieldArchive.Open(path);
+        }
+        catch (Exception ex)
+        {
+            error.WriteLine($"Archive open failed: {ex.GetType().Name}: {ex.Message}");
+            return 1;
+        }
+
+        output.WriteLine($"Archive: {path}");
+        output.WriteLine($"Entries: {archive.ArchiveEntries.Count}, fields: {archive.FieldEntries.Count}");
+
+        var fields = archive.FieldEntries
+            .Where(f => onlyField == null || f.Name.Equals(onlyField, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (onlyField != null && fields.Count == 0)
+        {
+            error.WriteLine($"Field not found: {onlyField}");
+            return 1;
+        }
+
+        int failedFields = 0, partialFields = 0;
+        foreach (var entry in fields)
+        {
+            try
+            {
+                var field = archive.OpenField(entry.Name);
+                if (field.SectionErrors.Count > 0)
+                {
+                    partialFields++;
+                    foreach (var (section, message) in field.SectionErrors)
+                        output.WriteLine($"  {entry.Name}: section {section} failed: {message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failedFields++;
+                output.WriteLine($"  {entry.Name}: FAILED to open: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        output.WriteLine($"Result: {fields.Count - failedFields - partialFields} ok, " +
+                         $"{partialFields} with section errors, {failedFields} failed");
+        return failedFields + partialFields == 0 ? 0 : 2;
+    }
+
+    // -----------------------------------------------------------------------
     // apply / revert
     // -----------------------------------------------------------------------
 
@@ -276,12 +354,15 @@ public static class Program
         var fieldOpt = new Option<string>("--field", "Field name inside the archive") { IsRequired = true };
         var planOpt = new Option<string>("--plan", "Scene-plan JSON file (e.g. from 'generate --out')") { IsRequired = true };
         var dryRunOpt = new Option<bool>("--dry-run", "Validate and print the change summary without writing anything");
+        var walkmeshOpt = new Option<string>("--walkmesh-mode", () => "ignore",
+            "What to do with a walkmesh the plan proposes: ignore | merge | replace");
         var cmd = new Command("apply",
             "Apply a scene plan to a field: backup, write to a temp archive, verify, then atomically replace");
         cmd.AddOption(archiveOpt);
         cmd.AddOption(fieldOpt);
         cmd.AddOption(planOpt);
         cmd.AddOption(dryRunOpt);
+        cmd.AddOption(walkmeshOpt);
 
         cmd.SetHandler((InvocationContext ctx) =>
         {
@@ -290,7 +371,8 @@ public static class Program
                 parse.GetValueForOption(archiveOpt)!,
                 parse.GetValueForOption(fieldOpt)!,
                 parse.GetValueForOption(planOpt)!,
-                parse.GetValueForOption(dryRunOpt));
+                parse.GetValueForOption(dryRunOpt),
+                parse.GetValueForOption(walkmeshOpt)!);
         });
         return cmd;
     }
@@ -298,8 +380,14 @@ public static class Program
     /// <summary>
     /// Exit codes: 0 applied (or dry run clean), 1 input/IO error, 2 validation errors (nothing written).
     /// </summary>
-    private static int RunApply(string archivePath, string fieldName, string planPath, bool dryRun)
+    private static int RunApply(string archivePath, string fieldName, string planPath, bool dryRun, string walkmeshMode = "ignore")
     {
+        if (!Enum.TryParse<WalkmeshMode>(walkmeshMode, ignoreCase: true, out var mode) || !Enum.IsDefined(mode))
+        {
+            Console.Error.WriteLine($"Unknown --walkmesh-mode '{walkmeshMode}' (use ignore, merge or replace).");
+            return 1;
+        }
+
         if (!File.Exists(planPath))
         {
             Console.Error.WriteLine($"Plan not found: {planPath}");
@@ -320,7 +408,7 @@ public static class Program
             return 1;
         }
 
-        var check = ScenePlanApplyPipeline.Check(parsed.Plan, field);
+        var check = ScenePlanApplyPipeline.Check(parsed.Plan, field, mode);
         foreach (var note in check.Layout.Notes)
             Console.Error.WriteLine($"  layout: {note}");
 
@@ -351,7 +439,7 @@ public static class Program
             return 1;
         }
 
-        var commit = ScenePlanApplyPipeline.Commit(parsed.Plan, field, new SafeArchiveWriter(archivePath));
+        var commit = ScenePlanApplyPipeline.Commit(parsed.Plan, field, new SafeArchiveWriter(archivePath), mode);
         if (!commit.Ok)
         {
             Console.Error.WriteLine(commit.Error);

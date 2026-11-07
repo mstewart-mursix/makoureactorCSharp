@@ -23,6 +23,7 @@ public sealed class FieldPC : Field
     private List<FieldSectionInfo> _sections;
     private byte[]? _backgroundSectionOverride;
     private bool _removeUnusedTilesSection;
+    private readonly Dictionary<FieldSection, string> _sectionErrors = new();
 
     private FieldPC(string name, byte[] fieldData, byte[]? compressedData) : base(name)
     {
@@ -48,6 +49,12 @@ public sealed class FieldPC : Field
     /// Gets metadata for all nine PC field sections.
     /// </summary>
     public IReadOnlyList<FieldSectionInfo> Sections => _sections;
+
+    /// <summary>
+    /// Gets the reason each section failed to parse (sections that parsed are absent). A failed
+    /// section is left null/raw rather than failing the whole field, matching the Qt reader.
+    /// </summary>
+    public IReadOnlyDictionary<FieldSection, string> SectionErrors => _sectionErrors;
 
     /// <inheritdoc />
     public override bool IsPC() => true;
@@ -151,6 +158,16 @@ public sealed class FieldPC : Field
         if (Walkmesh == null)
             throw new InvalidOperationException("Walkmesh data is not available for this field.");
 
+        SetModified();
+    }
+
+    /// <summary>
+    /// Installs a walkmesh (for example when the field had none) and marks the field modified.
+    /// </summary>
+    public void ReplaceWalkmesh(IdFile walkmesh)
+    {
+        ArgumentNullException.ThrowIfNull(walkmesh);
+        Walkmesh = walkmesh;
         SetModified();
     }
 
@@ -502,9 +519,10 @@ public sealed class FieldPC : Field
         {
             ScriptsAndTexts = Section1File.Open(GetSectionData(FieldSection.Scripts));
         }
-        catch
+        catch (Exception ex)
         {
             ScriptsAndTexts = null;
+            _sectionErrors[FieldSection.Scripts] = ex.Message;
         }
     }
 
@@ -514,9 +532,10 @@ public sealed class FieldPC : Field
         {
             ModelLoader = FieldModelLoaderPC.Open(GetSectionData(FieldSection.ModelLoader));
         }
-        catch
+        catch (Exception ex)
         {
             ModelLoader = null;
+            _sectionErrors[FieldSection.ModelLoader] = ex.Message;
         }
     }
 
@@ -538,9 +557,10 @@ public sealed class FieldPC : Field
         {
             Walkmesh = IdFile.Open(GetSectionData(FieldSection.Walkmesh));
         }
-        catch
+        catch (Exception ex)
         {
             Walkmesh = null;
+            _sectionErrors[FieldSection.Walkmesh] = ex.Message;
         }
     }
 
@@ -550,9 +570,10 @@ public sealed class FieldPC : Field
         {
             Encounters = EncounterFile.Open(GetSectionData(FieldSection.Encounter));
         }
-        catch
+        catch (Exception ex)
         {
             Encounters = null;
+            _sectionErrors[FieldSection.Encounter] = ex.Message;
         }
     }
 
@@ -560,11 +581,14 @@ public sealed class FieldPC : Field
     {
         try
         {
-            Background = BackgroundFilePC.Open(GetSectionData(FieldSection.Background));
+            var data = GetSectionData(FieldSection.Background);
+            // An empty background section is valid (e.g. a freshly created field); nothing to parse.
+            Background = data.Length == 0 ? null : BackgroundFilePC.Open(data);
         }
-        catch
+        catch (Exception ex)
         {
             Background = null;
+            _sectionErrors[FieldSection.Background] = ex.Message;
         }
     }
 
@@ -574,9 +598,10 @@ public sealed class FieldPC : Field
         {
             Inf = InfFile.Open(GetSectionData(FieldSection.Inf));
         }
-        catch
+        catch (Exception ex)
         {
             Inf = null;
+            _sectionErrors[FieldSection.Inf] = ex.Message;
         }
     }
 

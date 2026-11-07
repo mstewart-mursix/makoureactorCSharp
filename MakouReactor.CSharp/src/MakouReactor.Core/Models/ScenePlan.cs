@@ -154,6 +154,27 @@ public sealed class LayoutProp
 }
 
 /// <summary>
+/// One proposed walkable region: a simple polygon in field coordinates.
+/// </summary>
+public sealed class WalkmeshRegion
+{
+    public string Id { get; set; } = string.Empty;
+    public List<Point> Polygon { get; set; } = new();
+
+    public override string ToString() => $"WalkmeshRegion({Id}, {Polygon.Count} points)";
+}
+
+/// <summary>
+/// Proposed walkmesh (schema 1.1): walkable polygons that are triangulated on apply.
+/// </summary>
+public sealed class WalkmeshPlan
+{
+    public List<WalkmeshRegion> Regions { get; set; } = new();
+
+    public override string ToString() => $"WalkmeshPlan({Regions.Count} regions)";
+}
+
+/// <summary>
 /// Layout definition: props, spawn point, and walkmesh hint.
 /// Maps to <c>struct LayoutDef</c> in <c>ai/ScenePlan.h</c>.
 /// </summary>
@@ -162,6 +183,9 @@ public sealed class LayoutDef
     public List<LayoutProp> Props { get; set; } = new();
     public Point SpawnPoint { get; set; }
     public string WalkmeshHint { get; set; } = string.Empty;
+
+    /// <summary>Optional proposed walkmesh polygons (schema 1.1); null when not requested.</summary>
+    public WalkmeshPlan? Walkmesh { get; set; }
 
     public override string ToString() => $"LayoutDef({Props.Count} props, spawn={SpawnPoint})";
 }

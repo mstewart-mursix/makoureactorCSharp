@@ -56,6 +56,10 @@ public static class PromptBuilder
             props?: { id:string; position:{x:number;y:number}; }[];
             spawnPoint?: { x:number; y:number };
             restrictions?: { walkmeshHint?: "open"|"tight"; } // hint only
+            // schema 1.1 (set meta.version to "1.1" when used). Only include walkmesh when asked to
+            // design the layout of a new area. Each polygon is a simple outline (>= 3 points,
+            // no self-intersections); actors, props and spawnPoint must lie inside the regions.
+            walkmesh?: { regions: { id:string; polygon:{x:number;y:number}[] }[] };
           };
         }
 
@@ -95,8 +99,24 @@ public static class PromptBuilder
         lines.Add($"  - genLayout: {(p.GenLayout ? "true" : "false")}");
         lines.Add($"  - genScripts: {(p.GenScripts ? "true" : "false")}");
         lines.Add($"- Field size hint (px): width={widthPx}, height={heightPx}");
+        if (p.GenScripts)
+        {
+            lines.Add("- Events that should run by themselves when the field loads use trigger \"on_enter\".");
+            lines.Add("- Only these steps become game script: say, wait, battle (encounterId a plain number) and");
+            lines.Add("  give_item (itemId a plain number). Other steps are kept as notes, so prefer these for the core scene.");
+        }
+
         lines.Add("- Avoid overlapping placements; respect basic walkable regions if mentioned.");
         lines.Add("- Keep result coherent and lore-friendly.");
+        if (!string.IsNullOrWhiteSpace(fieldContext))
+        {
+            lines.Add(string.Empty);
+            lines.Add("Field Context:");
+            lines.Add(fieldContext.Trim());
+            lines.Add("Place all positions inside the walkable region described above. " +
+                      "Do not reuse existing group names.");
+        }
+
         lines.Add(string.Empty);
 
         if (!string.IsNullOrWhiteSpace(fieldContext))

@@ -70,6 +70,20 @@ public sealed class ValidationResult
 // Mapper types (maps to ai/ScenePlanMapper.h)
 // ============================================================================
 
+/// <summary>How a proposed walkmesh is combined with the field's existing one.</summary>
+public enum WalkmeshMode
+{
+    /// <summary>Do not touch the field's walkmesh (default, the safe choice).</summary>
+    Ignore,
+
+    /// <summary>Append the proposed triangles to the existing walkmesh.</summary>
+    Merge,
+
+    /// <summary>Replace the existing walkmesh entirely.</summary>
+    Replace,
+}
+
+
 /// <summary>
 /// Options for applying a scene plan to a field.
 /// Maps to <c>struct ApplyOptions</c> in <c>ai/ScenePlanMapper.h</c>.
@@ -94,6 +108,8 @@ public sealed class ApplyOptions
     /// (<c>src/widgets/VarManager.cpp</c>: "Var banks 08, 09 and 10 are temporary").
     /// </summary>
     public byte FlagBank { get; init; } = 8;
+    /// <summary>How a proposed walkmesh (schema 1.1) is combined with the field's walkmesh.</summary>
+    public WalkmeshMode WalkmeshMode { get; init; } = WalkmeshMode.Ignore;
 }
 
 /// <summary>A dialogue text appended to the field's text table by the mapper.</summary>
@@ -166,6 +182,12 @@ public sealed class LayoutOptions
 {
     public int MinDistancePx { get; init; } = 24;
     public bool EnableWalkmeshSnap { get; init; }
+
+    /// <summary>
+    /// When the field has a walkmesh, move spawn point, props and actors that fall outside it onto the
+    /// nearest walkable point, and keep overlap nudging on walkable ground. Ignored without a walkmesh.
+    /// </summary>
+    public bool ConstrainToWalkmesh { get; init; } = true;
     public int NudgeStepPx { get; init; } = 8;
     public int MaxNudgeTries { get; init; } = 200;
 }

@@ -31,18 +31,30 @@ public static class LayoutGenerator
         WalkmeshGeometry.HasTriangles(field?.Walkmesh) ? field!.Walkmesh : null;
 
     /// <summary>
+    /// The walkable geometry placements should respect: the plan's own proposed walkmesh when it has
+    /// valid regions (the model designed the layout around it), otherwise the field's walkmesh.
+    /// </summary>
+    public static IdFile? PlacementWalkmesh(ScenePlan plan, Field? field) =>
+        WalkmeshBuilder.BuildValidRegions(plan.Layout?.Walkmesh) ?? WalkmeshOf(field);
+
+    /// <summary>Placement bounds for a plan: the placement walkmesh's bounding box, else <see cref="DefaultBounds"/>.</summary>
+    public static Rect PlacementBounds(ScenePlan plan, Field? field) =>
+        WalkmeshGeometry.Bounds(PlacementWalkmesh(plan, field)) ?? DefaultBounds;
+
+    /// <summary>
     /// Adjust placements in-place in the <see cref="ScenePlan"/>.
     /// Returns a summary of changes performed.
     /// </summary>
     public static LayoutResult Adjust(ScenePlan plan, Field? field, LayoutOptions? opts = null)
     {
         var notes = new List<string>();
-        var bounds = FieldBounds(field);
+        var placementWalkmesh = PlacementWalkmesh(plan, field);
+        var bounds = WalkmeshGeometry.Bounds(placementWalkmesh) ?? DefaultBounds;
+        var walkmesh = (opts?.ConstrainToWalkmesh ?? true) ? placementWalkmesh : null;
         var minDistancePx = opts?.MinDistancePx ?? 24;
         var enableWalkmeshSnap = opts?.EnableWalkmeshSnap ?? false;
         var nudgeStepPx = opts?.NudgeStepPx ?? 8;
         var maxNudgeTries = opts?.MaxNudgeTries ?? 200;
-        var walkmesh = WalkmeshOf(field);
 
         // Move a point onto walkable floor when a walkmesh exists; returns the (possibly) new point.
         Point OntoWalkmesh(Point pt, string what)

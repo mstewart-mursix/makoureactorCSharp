@@ -18,6 +18,13 @@ public interface ILLMBackend : IDisposable
     /// </summary>
     Task<LLMRawResult> RequestScenePlanAsync(LLMRequest req);
 
+    /// <summary>
+    /// Same as <see cref="RequestScenePlanAsync(LLMRequest)"/> but lets the backend report progress while
+    /// it works. Backends without progress support need not override this.
+    /// </summary>
+    Task<LLMRawResult> RequestScenePlanAsync(LLMRequest req, IProgress<LLMProgressEvent>? progress) =>
+        RequestScenePlanAsync(req);
+
     /// <summary>Cancel all in-flight requests immediately.</summary>
     void CancelAll();
 }

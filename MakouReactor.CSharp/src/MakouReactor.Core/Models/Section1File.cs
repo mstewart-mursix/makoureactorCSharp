@@ -27,7 +27,7 @@ public sealed class Section1File
     public bool IsModified { get; private set; }
     public bool JapaneseText { get; private set; }
 
-    public const int MaxGrpScriptCount = 256;
+    public const int MaxGrpScriptCount = byte.MaxValue;
     public const int MaxTextCount = 256;
 
     public int GrpScriptCount => GrpScripts.Count;
@@ -101,13 +101,34 @@ public sealed class Section1File
     public void InsertGrpScript(int index, GrpScript grpScript)
     {
         if (index >= 0 && index <= GrpScripts.Count && GrpScripts.Count < MaxGrpScriptCount)
+        {
             GrpScripts.Insert(index, grpScript);
+            IsModified = true;
+        }
+    }
+
+    /// <summary>
+    /// Appends a script group after the existing ones.
+    /// </summary>
+    /// <returns>False when the group limit is reached.</returns>
+    public bool AppendGrpScript(GrpScript grpScript)
+    {
+        ArgumentNullException.ThrowIfNull(grpScript);
+        if (GrpScripts.Count >= MaxGrpScriptCount)
+            return false;
+
+        GrpScripts.Add(grpScript);
+        IsModified = true;
+        return true;
     }
 
     public void RemoveGrpScript(int index)
     {
         if (index >= 0 && index < GrpScripts.Count)
+        {
             GrpScripts.RemoveAt(index);
+            IsModified = true;
+        }
     }
 
     public FF7String? Text(int textId) =>

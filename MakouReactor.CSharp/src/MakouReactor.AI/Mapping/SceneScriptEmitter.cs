@@ -120,19 +120,29 @@ internal sealed class SceneScriptEmitter
     private int _flagBit = 8;
     private bool _textOverflow;
 
-    private SceneScriptEmitter(ScenePlan plan, Field field, Section1File section, ApplyOptions options, string directorName)
+    private SceneScriptEmitter(ScenePlan plan, Field field, Section1File section, ApplyOptions options, string directorName,
+                               IdFile? walkmesh)
     {
         _plan = plan;
         _section = section;
         _options = options;
-        _walkmesh = LayoutGenerator.WalkmeshOf(field);
+        _walkmesh = walkmesh is { HasTriangle: true } ? walkmesh : LayoutGenerator.WalkmeshOf(field);
         _camera = field.Camera is { HasCamera: true } ca ? ca.Cameras[0] : null;
         _modelLoaderCount = field.ModelLoader?.ModelCount ?? 0;
         _out = new SceneEmission { DirectorName = directorName };
     }
 
     /// <summary>Computes the emission; never modifies <paramref name="field"/>.</summary>
-    public static SceneEmission Emit(ScenePlan plan, Field field, Section1File section, ApplyOptions options)
+    /// <param name="plan">The plan to emit.</param>
+    /// <param name="field">The target field.</param>
+    /// <param name="section">The field's Section 1.</param>
+    /// <param name="options">Apply options.</param>
+    /// <param name="walkmesh">
+    /// The walkmesh the field will have once the plan is applied (when the plan changes it);
+    /// positions and triangle ids are resolved against it. Null uses the field's own walkmesh.
+    /// </param>
+    public static SceneEmission Emit(ScenePlan plan, Field field, Section1File section, ApplyOptions options,
+                                     IdFile? walkmesh = null)
     {
         if (options.FlagBank is < 1 or > 15)
             return new SceneEmission { Error = $"Flag bank {options.FlagBank} is invalid; variable banks are 1-15." };
@@ -152,7 +162,7 @@ internal sealed class SceneScriptEmitter
             DefaultDirectorName,
             new HashSet<string>(usedNames, StringComparer.OrdinalIgnoreCase));
 
-        var emitter = new SceneScriptEmitter(plan, field, section, options, directorName);
+        var emitter = new SceneScriptEmitter(plan, field, section, options, directorName, walkmesh);
         return emitter.Run();
     }
 

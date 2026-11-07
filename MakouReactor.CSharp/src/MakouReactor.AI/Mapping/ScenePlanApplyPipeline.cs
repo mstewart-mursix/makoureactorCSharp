@@ -60,7 +60,10 @@ public static class ScenePlanApplyPipeline
     /// validate it and, when there are no validation errors, compute the mapper preview.
     /// The field is not modified.
     /// </summary>
-    public static PlanApplyCheck Check(ScenePlan plan, FieldPC field)
+    /// <param name="plan">The plan (its layout is adjusted in place).</param>
+    /// <param name="field">The target field (not modified).</param>
+    /// <param name="walkmeshMode">How a walkmesh proposed by the plan is combined with the field's.</param>
+    public static PlanApplyCheck Check(ScenePlan plan, FieldPC field, WalkmeshMode walkmeshMode = WalkmeshMode.Ignore)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(field);
@@ -69,7 +72,7 @@ public static class ScenePlanApplyPipeline
         var validation = ScenePlanValidator.Validate(plan, field);
         var preview = validation.HasErrors
             ? null
-            : ScenePlanMapper.ApplyToField(plan, field, new ApplyOptions { PreviewOnly = true });
+            : ScenePlanMapper.ApplyToField(plan, field, new ApplyOptions { PreviewOnly = true, WalkmeshMode = walkmeshMode });
 
         return new PlanApplyCheck { Layout = layout, Validation = validation, Preview = preview };
     }
@@ -80,13 +83,18 @@ public static class ScenePlanApplyPipeline
     /// <see cref="Check"/> whose <see cref="PlanApplyCheck.CanApply"/> is true. On a write failure the
     /// archive is untouched (the in-memory field is modified either way).
     /// </summary>
-    public static PlanCommitResult Commit(ScenePlan plan, FieldPC field, SafeArchiveWriter writer)
+    /// <param name="plan">The checked plan.</param>
+    /// <param name="field">The target field (modified in memory).</param>
+    /// <param name="writer">Writer for the archive that holds <paramref name="field"/>.</param>
+    /// <param name="walkmeshMode">How a walkmesh proposed by the plan is combined with the field's.</param>
+    public static PlanCommitResult Commit(ScenePlan plan, FieldPC field, SafeArchiveWriter writer,
+                                          WalkmeshMode walkmeshMode = WalkmeshMode.Ignore)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(field);
         ArgumentNullException.ThrowIfNull(writer);
 
-        var applied = ScenePlanMapper.ApplyToField(plan, field, new ApplyOptions { PreviewOnly = false });
+        var applied = ScenePlanMapper.ApplyToField(plan, field, new ApplyOptions { PreviewOnly = false, WalkmeshMode = walkmeshMode });
         if (!applied.Ok)
             return new PlanCommitResult { Error = $"Apply failed: {applied.Error}", Applied = applied };
 

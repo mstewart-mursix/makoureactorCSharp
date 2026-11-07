@@ -149,6 +149,9 @@ public sealed class SceneGenerationService : IDisposable
     /// <summary>
     /// Run the full pipeline. Nothing is written to any field; the caller decides
     /// whether to apply the returned plan via <see cref="Mapping.ScenePlanMapper"/>.
+    /// When the model's output cannot be extracted/parsed, or the plan has validation
+    /// errors, the model is re-prompted with the exact errors up to
+    /// <see cref="LLMConfig.MaxRepairAttempts"/> times.
     /// </summary>
     /// <remarks>
     /// When the response cannot be extracted or parsed, or validation reports errors, the model
@@ -158,10 +161,75 @@ public sealed class SceneGenerationService : IDisposable
     /// parsed plan is returned with <c>Ok = true</c> and its errors in <see cref="SceneGenerationResult.Validation"/>,
     /// matching the behaviour without repair. <see cref="SceneGenerationResult.Attempts"/> records each call.
     /// </remarks>
-    public async Task<SceneGenerationResult> GenerateAsync(ScenePrompt prompt, Field? field = null,
-                                                           int widthPx = 320, int heightPx = 240)
+    /// <param name="prompt">Scene prompt.</param>
+    /// <param name="field">Field to describe and validate against.</param>
+    /// <param name="widthPx">Fallback width hint when the field has no walkmesh.</param>
+    /// <param name="heightPx">Fallback height hint when the field has no walkmesh.</param>
+    /// <param name="progress">Optional progress sink (phase changes, repair attempts, backend progress lines).</param>
+    public Task<SceneGenerationResult> GenerateAsync(ScenePrompt prompt, Field? field = null,
+                                                     int widthPx = 320, int heightPx = 240,
+                                                     IProgress<LLMProgressEvent>? progress = null)
     {
-        var originalRequest = BuildRequest(prompt, widthPx, heightPx, field);
+        ArgumentNullException.ThrowIfNull(prompt);
+        return RunWithRepairsAsync(BuildRequest(prompt, widthPx, heightPx, field), field, progress);
+    }
+
+    /// <summary>
+    /// Ask the model to change an existing plan ("make the blacksmith angrier", "add a battle at the end").
+    /// The previous plan JSON and the instruction are sent together with the original constraints, and the
+    /// result goes through the same parse/validate/repair loop as <see cref="GenerateAsync"/>.
+    /// </summary>
+    /// <param name="previous">A successful earlier result; its <see cref="SceneGenerationResult.RawJson"/> is refined.</param>
+    /// <param name="instruction">What to change, in plain language.</param>
+    /// <param name="originalPrompt">The prompt that produced <paramref name="previous"/> (keeps its flags and text).</param>
+    /// <param name="field">Field to describe and validate against.</param>
+    /// <param name="widthPx">Fallback width hint when the field has no walkmesh.</param>
+    /// <param name="heightPx">Fallback height hint when the field has no walkmesh.</param>
+    /// <param name="progress">Optional progress sink.</param>
+    public Task<SceneGenerationResult> RefineAsync(SceneGenerationResult previous, string instruction,
+                                                   ScenePrompt originalPrompt, Field? field = null,
+                                                   int widthPx = 320, int heightPx = 240,
+                                                   IProgress<LLMProgressEvent>? progress = null)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        ArgumentNullException.ThrowIfNull(originalPrompt);
+
+        if (string.IsNullOrWhiteSpace(instruction))
+            return Task.FromResult(SceneGenerationResult.Failure("Enter what should change in the scene."));
+        if (string.IsNullOrWhiteSpace(previous.RawJson))
+            return Task.FromResult(SceneGenerationResult.Failure("There is no previous plan to refine."));
+
+        var request = BuildRefineRequest(BuildRequest(originalPrompt, widthPx, heightPx, field), previous.RawJson, instruction);
+        return RunWithRepairsAsync(request, field, progress);
+    }
+
+    /// <summary>
+    /// Re-analyse stored plan JSON (for example a history entry) against the current field: parse, lay out and
+    /// validate, without calling the model.
+    /// </summary>
+    public static SceneGenerationResult FromJson(string json, Field? field = null)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return SceneGenerationResult.Failure("No plan JSON to load.");
+
+        var parsed = ScenePlanParser.Parse(Encoding.UTF8.GetBytes(json));
+        if (!parsed.Ok)
+            return SceneGenerationResult.Failure(parsed.Error, json);
+
+        return new SceneGenerationResult
+        {
+            Ok = true,
+            RawJson = json,
+            Plan = parsed.Plan,
+            Layout = LayoutGenerator.Adjust(parsed.Plan, field),
+            Validation = ScenePlanValidator.Validate(parsed.Plan, field),
+        };
+    }
+
+    private async Task<SceneGenerationResult> RunWithRepairsAsync(LLMRequest originalRequest, Field? field,
+                                                                  IProgress<LLMProgressEvent>? progress)
+    {
+        progress?.Report(new LLMProgressEvent(LLMProgressPhase.Starting));
         var maxAttempts = 1 + Math.Max(0, _config.MaxRepairAttempts);
         var attempts = new List<GenerationAttempt>();
 
@@ -170,31 +238,47 @@ public sealed class SceneGenerationService : IDisposable
 
         for (var number = 1; number <= maxAttempts; number++)
         {
-            var raw = await _backend.RequestScenePlanAsync(request);
-            if (!raw.Ok)
+            progress?.Report(new LLMProgressEvent(LLMProgressPhase.Waiting, string.Empty, number));
+            var raw = await _backend.RequestScenePlanAsync(request, progress);
+            if (!raw.Ok && raw.Raw.Length == 0)
             {
-                // Transport failure or cancellation: retrying would not help (and would ignore Cancel).
+                // Transport failure or cancellation (nothing came back from the model): retrying
+                // would not help, and would ignore Cancel.
                 attempts.Add(new GenerationAttempt { Number = number, Errors = new[] { raw.Error } });
-                return last?.Plan != null
+                var failed = last?.Plan != null
                     ? last.WithAttempts(attempts)
                     : SceneGenerationResult.Failure(raw.Error, last?.RawJson ?? string.Empty).WithAttempts(attempts);
+                progress?.Report(new LLMProgressEvent(LLMProgressPhase.Done, raw.Error, number));
+                return failed;
             }
 
-            var (result, errors, modelOutput) = Evaluate(raw, field);
+            // A reply that arrived but was not usable still carries the model's text: repair it.
+            var (result, errors, modelOutput) = raw.Ok
+                ? Evaluate(raw, field, progress, number)
+                : (SceneGenerationResult.Failure(raw.Error), (IReadOnlyList<string>)new[] { raw.Error },
+                   Encoding.UTF8.GetString(raw.Raw));
             attempts.Add(new GenerationAttempt { Number = number, Errors = errors });
 
             if (errors.Count == 0)
+            {
+                progress?.Report(new LLMProgressEvent(LLMProgressPhase.Done, string.Empty, number));
                 return result.WithAttempts(attempts);
+            }
 
             // Prefer keeping a parsed-but-invalid plan over a later unparseable one.
             if (result.Plan != null || last?.Plan == null)
                 last = result;
 
             if (number < maxAttempts)
+            {
+                progress?.Report(new LLMProgressEvent(LLMProgressPhase.Repairing, errors[0], number + 1));
                 request = BuildRepairRequest(originalRequest, modelOutput, errors);
+            }
         }
 
-        return last!.WithAttempts(attempts);
+        var final = last!.WithAttempts(attempts);
+        progress?.Report(new LLMProgressEvent(LLMProgressPhase.Done, final.Ok ? string.Empty : final.Error, attempts.Count));
+        return final;
     }
 
     /// <summary>
@@ -243,8 +327,9 @@ public sealed class SceneGenerationService : IDisposable
     /// blocking errors (empty when accepted), and the text to echo back in a repair prompt.
     /// </summary>
     private static (SceneGenerationResult Result, IReadOnlyList<string> Errors, string ModelOutput)
-        Evaluate(LLMRawResult raw, Field? field)
+        Evaluate(LLMRawResult raw, Field? field, IProgress<LLMProgressEvent>? progress, int attempt)
     {
+        progress?.Report(new LLMProgressEvent(LLMProgressPhase.Parsing, string.Empty, attempt));
         var jsonBytes = LLMResponseExtractor.ExtractScenePlanJson(raw, out var extractError);
         if (jsonBytes == null)
         {
@@ -258,6 +343,7 @@ public sealed class SceneGenerationService : IDisposable
         if (!parsed.Ok)
             return (SceneGenerationResult.Failure(parsed.Error, rawJson), new[] { parsed.Error }, rawJson);
 
+        progress?.Report(new LLMProgressEvent(LLMProgressPhase.Validating, string.Empty, attempt));
         var layout = LayoutGenerator.Adjust(parsed.Plan, field);
         var validation = ScenePlanValidator.Validate(parsed.Plan, field);
 
@@ -276,6 +362,32 @@ public sealed class SceneGenerationService : IDisposable
         };
         return (result, errors, rawJson);
     }
+
+    /// <summary>Compose a refine request: original prompts, the current plan JSON and the change to make.</summary>
+    internal static LLMRequest BuildRefineRequest(LLMRequest original, string previousJson, string instruction)
+    {
+        var refinePrompt =
+            original.UserPrompt + "\n\n" +
+            "Current scene plan JSON:\n" + previousJson + "\n\n" +
+            "Refinement request:\n" + instruction.Trim() + "\n\n" +
+            "Apply the refinement to the current scene plan, keeping everything else unchanged. " +
+            "Return the complete updated JSON object only.";
+
+        return CopyWithUserPrompt(original, refinePrompt);
+    }
+
+    private static LLMRequest CopyWithUserPrompt(LLMRequest original, string userPrompt) => new()
+    {
+        EndpointUrl = original.EndpointUrl,
+        Model = original.Model,
+        ApiKey = original.ApiKey,
+        Temperature = original.Temperature,
+        MaxTokens = original.MaxTokens,
+        SystemPrompt = original.SystemPrompt,
+        UserPrompt = userPrompt,
+        Stream = original.Stream,
+        TimeoutMs = original.TimeoutMs,
+    };
 
     /// <summary>Cancel all in-flight requests.</summary>
     public void CancelAll() => _backend.CancelAll();

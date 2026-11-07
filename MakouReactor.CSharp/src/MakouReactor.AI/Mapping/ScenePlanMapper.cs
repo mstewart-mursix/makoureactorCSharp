@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
+using MakouReactor.AI.Layout;
 using MakouReactor.Core.Models;
 
 namespace MakouReactor.AI.Mapping;
@@ -52,12 +53,35 @@ public static class ScenePlanMapper
             };
         }
 
-        var emission = SceneScriptEmitter.Emit(plan, field, section, opts);
+        // A proposed walkmesh (schema 1.1) is validated and built before anything is changed, so a
+        // bad region cannot leave a half-applied plan, and the scripts are emitted against the
+        // walkmesh the field will actually have.
+        var walkmeshChange = PlanWalkmeshChange(plan, field, opts.WalkmeshMode, out var walkmeshError);
+        if (walkmeshError != null)
+            return ApplyResult.Failure(walkmeshError);
+
+        var emission = SceneScriptEmitter.Emit(plan, field, section, opts, walkmeshChange?.Result);
         if (emission.Error != null)
             return ApplyResult.Failure(emission.Error);
 
+        var walkmeshNote = walkmeshChange?.Describe(opts.PreviewOnly);
+        if (walkmeshChange == null && plan.Layout?.Walkmesh is { Regions.Count: > 0 } ignored)
+            walkmeshNote = $"The proposed walkmesh ({ignored.Regions.Count} region(s)) is not written (walkmesh mode is Ignore).";
+
+        var notes = emission.Notes.ToList();
+        if (walkmeshNote != null)
+            notes.Add(walkmeshNote);
+
         if (!opts.PreviewOnly)
+        {
             Commit(field, section, emission);
+            if (walkmeshChange != null)
+                ((FieldPC)field).ReplaceWalkmesh(walkmeshChange.Result);
+        }
+
+        var summary = BuildSummary(plan, emission, opts.PreviewOnly);
+        if (walkmeshNote != null)
+            summary += walkmeshNote + Environment.NewLine;
 
         return new ApplyResult
         {
@@ -68,9 +92,69 @@ public static class ScenePlanMapper
             TextsAdded = emission.Texts,
             OpcodeCounts = emission.OpcodeCounts,
             Warnings = emission.Warnings,
-            Notes = emission.Notes,
-            Summary = BuildSummary(plan, emission, opts.PreviewOnly),
+            Notes = notes,
+            Summary = summary,
         };
+    }
+
+    /// <summary>The walkmesh a plan will give the field, and how it was derived.</summary>
+    private sealed record WalkmeshChange(IdFile Result, WalkmeshMode Mode, int Before, int Added, int Regions)
+    {
+        public string Describe(bool previewOnly)
+        {
+            var verb = previewOnly ? "Would" : "Did";
+            return Mode == WalkmeshMode.Replace
+                ? $"{verb} replace the walkmesh ({Before} triangle(s)) with {Added} triangle(s) from {Regions} region(s). " +
+                  "Existing gateways, triggers and entity positions may no longer line up with it."
+                : $"{verb} add {Added} walkmesh triangle(s) from {Regions} region(s) to the existing {Before}.";
+        }
+    }
+
+    /// <summary>
+    /// Build the walkmesh that applying <paramref name="plan"/> with <paramref name="mode"/> would
+    /// produce, on a copy (the field is not modified). Null when the walkmesh is left alone.
+    /// </summary>
+    private static WalkmeshChange? PlanWalkmeshChange(ScenePlan plan, Field field, WalkmeshMode mode, out string? error)
+    {
+        error = null;
+        if (mode == WalkmeshMode.Ignore || plan.Layout?.Walkmesh is not { Regions.Count: > 0 } proposed)
+            return null;
+
+        if (field is not FieldPC pcField)
+        {
+            error = "Walkmesh changes are only supported for PC fields.";
+            return null;
+        }
+
+        // A walkmesh that failed to parse is null, not empty: merging into "nothing" would
+        // overwrite the original section with only the new triangles.
+        if (mode == WalkmeshMode.Merge && pcField.SectionErrors.TryGetValue(FieldSection.Walkmesh, out var parseError))
+        {
+            error = $"The field's walkmesh could not be read ({parseError}); refusing to merge into it.";
+            return null;
+        }
+
+        foreach (var region in proposed.Regions)
+        {
+            var problem = WalkmeshBuilder.ValidatePolygon(region.Polygon);
+            if (problem != null)
+            {
+                error = $"Walkmesh region '{region.Id}': {problem}.";
+                return null;
+            }
+        }
+
+        var copy = new IdFile();
+        if (field.Walkmesh != null)
+        {
+            copy.Triangles.AddRange(field.Walkmesh.Triangles);
+            foreach (var access in field.Walkmesh.Access)
+                copy.Access.Add(new Access(access.A[0], access.A[1], access.A[2]));
+        }
+
+        var before = copy.TriangleCount;
+        var added = WalkmeshBuilder.Apply(copy, proposed, mode);
+        return new WalkmeshChange(copy, mode, before, added, proposed.Regions.Count);
     }
 
     /// <summary>

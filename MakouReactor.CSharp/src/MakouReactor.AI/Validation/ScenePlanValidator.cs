@@ -25,26 +25,55 @@ public static class ScenePlanValidator
     {
         var options = opts ?? new ValidationOptions();
         var issues = new List<Issue>();
+        ValidateWalkmeshPlan(plan, issues);
+        var walkmesh = LayoutGenerator.PlacementWalkmesh(plan, field);
+        var bounds = LayoutGenerator.PlacementBounds(plan, field);
 
-        ValidateActors(plan, field, issues);
+        ValidateActors(plan, bounds, walkmesh, issues);
 
         var actorIds = CollectActorIds(plan);
         ValidateDialog(plan, options, actorIds, issues);
 
-        ValidateEvents(plan, field, options, issues);
+        ValidateEvents(plan, bounds, walkmesh, options, issues);
 
-        ValidateLayout(plan, field, issues);
+        ValidateLayout(plan, bounds, walkmesh, issues);
 
         return new ValidationResult { Issues = issues };
+    }
+
+    // -----------------------------------------------------------------------
+    // Proposed walkmesh validation (schema 1.1)
+    // -----------------------------------------------------------------------
+
+    private static void ValidateWalkmeshPlan(ScenePlan plan, List<Issue> out_)
+    {
+        var walkmesh = plan.Layout?.Walkmesh;
+        if (walkmesh is null)
+            return;
+
+        var seen = new HashSet<string>();
+        for (var i = 0; i < walkmesh.Regions.Count; i++)
+        {
+            var region = walkmesh.Regions[i];
+            var path = $"layout.walkmesh.regions[{i}]";
+
+            if (string.IsNullOrWhiteSpace(region.Id))
+                Add(out_, Severity.Error, $"{path}.id", "Empty region id");
+            else if (!seen.Add(region.Id))
+                Add(out_, Severity.Error, $"{path}.id", $"Duplicate region id '{region.Id}'");
+
+            var problem = WalkmeshBuilder.ValidatePolygon(region.Polygon);
+            if (problem != null)
+                Add(out_, Severity.Error, $"{path}.polygon", problem);
+        }
     }
 
     // -----------------------------------------------------------------------
     // Actor validation
     // -----------------------------------------------------------------------
 
-    private static void ValidateActors(ScenePlan plan, Field? field, List<Issue> out_)
+    private static void ValidateActors(ScenePlan plan, Rect bounds, IdFile? walkmesh, List<Issue> out_)
     {
-        var bounds = LayoutGenerator.FieldBounds(field);
         var seen = new HashSet<string>();
 
         for (int i = 0; i < plan.Actors.Count; i++)
@@ -57,7 +86,7 @@ public static class ScenePlanValidator
             else if (!seen.Add(a.Id))
                 Add(out_, Severity.Error, $"{path}.id", $"Duplicate actor id '{a.Id}'");
 
-            CheckPlacement(out_, $"{path}.position", "Position", a.Position, bounds, LayoutGenerator.WalkmeshOf(field));
+            CheckPlacement(out_, $"{path}.position", "Position", a.Position, bounds, walkmesh);
 
             if (a.Facing.HasValue && !IsFaceDir(a.Facing.Value))
                 Add(out_, Severity.Warn, $"{path}.facing",
@@ -89,10 +118,9 @@ public static class ScenePlanValidator
     // Event validation (with recursive IfFlag support)
     // -----------------------------------------------------------------------
 
-    private static void ValidateEvents(ScenePlan plan, Field? field, ValidationOptions opts, List<Issue> out_)
+    private static void ValidateEvents(ScenePlan plan, Rect bounds, IdFile? walkmesh,
+                                       ValidationOptions opts, List<Issue> out_)
     {
-        var bounds = LayoutGenerator.FieldBounds(field);
-        var walkmesh = LayoutGenerator.WalkmeshOf(field);
         var actorIds = CollectActorIds(plan);
 
         for (int i = 0; i < plan.Events.Count; i++)
@@ -213,10 +241,8 @@ public static class ScenePlanValidator
     // Layout validation
     // -----------------------------------------------------------------------
 
-    private static void ValidateLayout(ScenePlan plan, Field? field, List<Issue> out_)
+    private static void ValidateLayout(ScenePlan plan, Rect bounds, IdFile? walkmesh, List<Issue> out_)
     {
-        var bounds = LayoutGenerator.FieldBounds(field);
-        var walkmesh = LayoutGenerator.WalkmeshOf(field);
 
         CheckPlacement(out_, "layout.spawnPoint", "Spawn point", plan.Layout.SpawnPoint, bounds, walkmesh);
 
