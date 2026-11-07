@@ -1,9 +1,13 @@
 #include "LayoutGenerator.h"
 
+// mr_tests builds the AI sources without the field core (and its QtGui/ff7tk
+// dependencies); in that mode a Field is never available.
+#ifndef LLM_MAPPER_PREVIEW_ONLY
 #include "core/field/Field.h"
 #include "core/field/BackgroundFile.h"
 #include "core/field/BackgroundTiles.h"
 #include "core/field/IdFile.h"
+#endif
 
 namespace LLMLayout {
 
@@ -63,21 +67,33 @@ static QPoint nudgeToFree(const QPoint& start,
 QRect fieldBounds(Field* field)
 {
     if (!field) return QRect(0,0,320,240);
+#ifdef LLM_MAPPER_PREVIEW_ONLY
+    return QRect(0,0,320,240);
+#else
     BackgroundFile* bg = field->background(true);
     if (!bg) return QRect(0,0,320,240);
     const auto rect = bg->tiles().rect();
     if (rect.isValid() && rect.width() > 0 && rect.height() > 0) return rect;
     return QRect(0,0,320,240);
+#endif
 }
 
 static bool hasWalkmesh(Field* field) {
     if (!field) return false;
+#ifdef LLM_MAPPER_PREVIEW_ONLY
+    return false;
+#else
     IdFile* id = field->walkmesh(true);
     return id && id->hasTriangle() && id->triangleCount() > 0;
+#endif
 }
 
 static QPoint snapToWalkmesh(const QPoint& p, Field* field)
 {
+#ifdef LLM_MAPPER_PREVIEW_ONLY
+    Q_UNUSED(field);
+    return p;
+#else
     IdFile* id = field ? field->walkmesh(true) : nullptr;
     if (!id) return p;
     // Choose nearest triangle centroid in XY plane
@@ -94,6 +110,7 @@ static QPoint snapToWalkmesh(const QPoint& p, Field* field)
         if (d2 < bestD2) { bestD2 = d2; best = c; }
     }
     return best;
+#endif
 }
 
 LayoutResult adjust(ScenePlan& plan, Field* field, const LayoutOptions& opts)

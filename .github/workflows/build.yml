@@ -22,7 +22,8 @@ jobs:
         os:
           - ubuntu-latest
           - ubuntu-24.04-arm
-          - macos-latest
+          # macos-26 (macos-latest) has no AGL framework, which Qt 6.8.3 links.
+          - macos-15
           - windows-latest
           - windows-11-arm
         interface:
@@ -46,7 +47,7 @@ jobs:
           qt_host: linux_arm64
           vcpkg_lib_path: vcpkg_installed/arm64-linux/lib
           qt_gcc_dir: gcc_arm64
-        - os: macos-latest
+        - os: macos-15
           package_extension: 'dmg'
           package_suffix: 'macos'
           cmake_extra_args: "-DCMAKE_OSX_ARCHITECTURES=\"arm64;x86_64\" -DVCPKG_TARGET_TRIPLET=\"universal-osx\""

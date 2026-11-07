@@ -1,6 +1,5 @@
 #include "ScenePlanValidator.h"
 
-#include "core/field/Field.h"
 #include "ai/LayoutGenerator.h"
 
 namespace LLMValidate {
