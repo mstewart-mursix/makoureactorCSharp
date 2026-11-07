@@ -12,7 +12,7 @@ public sealed class VariableReferenceScannerTests
     [Fact]
     public void scan_finds_variable_references_in_binary_operations()
     {
-        var section = BuildSection([0x80, 0x21, 0x10, 0x20]);
+        var section = BuildSection([0x80, 0x12, 0x10, 0x20]); // BANK(1, 2): var in bank 1, value in bank 2
 
         var references = new VariableReferenceScanner().Scan(section);
 
@@ -29,7 +29,7 @@ public sealed class VariableReferenceScannerTests
     [Fact]
     public void scan_ignores_constant_operands_with_zero_bank()
     {
-        var section = BuildSection([0x80, 0x01, 0x10, 0x20]);
+        var section = BuildSection([0x80, 0x10, 0x10, 0x20]); // BANK(1, 0): constant value
 
         var references = new VariableReferenceScanner().Scan(section);
 
@@ -41,7 +41,7 @@ public sealed class VariableReferenceScannerTests
     [Fact]
     public void scan_finds_unary_operation_reference()
     {
-        var section = BuildSection([0x95, 0x30, 0x44]);
+        var section = BuildSection([0x95, 0x03, 0x44]); // unary ops use B2: BANK(0, 3)
 
         var references = new VariableReferenceScanner().Scan(section);
 

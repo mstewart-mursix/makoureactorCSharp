@@ -49,8 +49,8 @@ public sealed class VariableReferenceScanner
             return;
 
         var banks = opcode.Bytes[1];
-        var bank1 = LowNibble(banks);
-        var bank2 = HighNibble(banks);
+        var bank1 = HighNibble(banks); // B1(v) = (v >> 4) & 0xF in src/core/field/Opcode.h
+        var bank2 = LowNibble(banks);  // B2(v) = v & 0xF
 
         switch (opcode.Id)
         {

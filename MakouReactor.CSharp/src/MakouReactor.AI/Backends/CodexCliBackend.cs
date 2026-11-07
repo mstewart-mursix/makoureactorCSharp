@@ -31,7 +31,10 @@ public sealed class CodexCliBackend : ILLMBackend
         _executable = string.IsNullOrWhiteSpace(executable) ? "codex" : executable;
     }
 
-    public async Task<LLMRawResult> RequestScenePlanAsync(LLMRequest req)
+    public Task<LLMRawResult> RequestScenePlanAsync(LLMRequest req) =>
+        RequestScenePlanAsync(req, progress: null);
+
+    public async Task<LLMRawResult> RequestScenePlanAsync(LLMRequest req, IProgress<LLMProgressEvent>? progress)
     {
         var cts = new CancellationTokenSource();
         _inFlight.TryAdd(cts, 0);
@@ -63,8 +66,13 @@ public sealed class CodexCliBackend : ILLMBackend
                 ? req.UserPrompt
                 : req.SystemPrompt + "\n\n" + req.UserPrompt;
 
+            progress?.Report(new LLMProgressEvent(LLMProgressPhase.Waiting, "Codex CLI started"));
+
+            // Collect both streams in full (stdout may carry the answer; stderr carries the failure detail)
+            // and forward each stderr line as progress text. Lines are only displayed, never parsed, so a
+            // change in Codex's progress format cannot break generation.
             var stdoutTask = proc.StandardOutput.ReadToEndAsync();
-            var stderrTask = proc.StandardError.ReadToEndAsync();
+            var stderrTask = ReadLinesAsync(proc.StandardError, progress);
 
             // Feed stdin in the background: a wedged process that never reads stdin
             // must not keep us from reaching the cancellable wait below (killing the
@@ -122,6 +130,24 @@ public sealed class CodexCliBackend : ILLMBackend
         }
     }
 
+    private static async Task<string> ReadLinesAsync(StreamReader reader, IProgress<LLMProgressEvent>? progress)
+    {
+        var all = new StringBuilder();
+        while (await reader.ReadLineAsync() is { } line)
+        {
+            all.AppendLine(line);
+            var detail = line.Trim();
+            if (detail.Length == 0)
+                continue;
+
+            progress?.Report(new LLMProgressEvent(
+                LLMProgressPhase.Responding,
+                detail.Length > 200 ? detail[..200] : detail));
+        }
+
+        return all.ToString();
+    }
+
     private static async Task FeedStdinAsync(Process proc, string prompt)
     {
         try
@@ -151,30 +177,7 @@ public sealed class CodexCliBackend : ILLMBackend
         if (resolved == null)
             return null;
 
-        var psi = new ProcessStartInfo
-        {
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            WorkingDirectory = Path.GetTempPath()
-        };
-
-        // npm installs codex as a .cmd shim on Windows; batch files must run under cmd.exe.
-        var isBatch = resolved.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
-                   || resolved.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
-        if (isBatch)
-        {
-            psi.FileName = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
-            psi.ArgumentList.Add("/d");
-            psi.ArgumentList.Add("/c");
-            psi.ArgumentList.Add(resolved);
-        }
-        else
-        {
-            psi.FileName = resolved;
-        }
+        var psi = CreateStartInfo(resolved);
 
         psi.ArgumentList.Add("exec");
         psi.ArgumentList.Add("--skip-git-repo-check");
@@ -192,6 +195,39 @@ public sealed class CodexCliBackend : ILLMBackend
         }
 
         psi.ArgumentList.Add("-"); // read prompt from stdin
+
+        return psi;
+    }
+
+    /// <summary>
+    /// Redirected, windowless start info for a resolved Codex executable. Batch shims (npm installs
+    /// codex as a <c>.cmd</c> on Windows) are run under <c>cmd.exe /d /c</c>; callers append arguments.
+    /// </summary>
+    internal static ProcessStartInfo CreateStartInfo(string resolved)
+    {
+        var psi = new ProcessStartInfo
+        {
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = Path.GetTempPath()
+        };
+
+        var isBatch = resolved.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
+                   || resolved.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
+        if (isBatch)
+        {
+            psi.FileName = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
+            psi.ArgumentList.Add("/d");
+            psi.ArgumentList.Add("/c");
+            psi.ArgumentList.Add(resolved);
+        }
+        else
+        {
+            psi.FileName = resolved;
+        }
 
         return psi;
     }
@@ -294,7 +330,7 @@ public sealed class CodexCliBackend : ILLMBackend
     private static string FirstNonEmpty(string a, string b) =>
         !string.IsNullOrWhiteSpace(a) ? a : b;
 
-    private static void TryKill(Process proc)
+    internal static void TryKill(Process proc)
     {
         try
         {

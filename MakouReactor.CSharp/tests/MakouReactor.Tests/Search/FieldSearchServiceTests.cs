@@ -84,7 +84,7 @@ public sealed class FieldSearchServiceTests
 
         var group = new GrpScript("cloud");
         group.SetScript(0, new Script([0x24, 0x10, 0x00, 0x00]));
-        group.SetScript(1, new Script([0x95, 0x30, 0x44]));
+        group.SetScript(1, new Script([0x95, 0x03, 0x44]));
         section.GrpScripts.Add(group);
 
         return section;

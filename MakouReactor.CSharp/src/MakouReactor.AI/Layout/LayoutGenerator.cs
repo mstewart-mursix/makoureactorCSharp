@@ -6,8 +6,9 @@ using MakouReactor.Core.Models;
 namespace MakouReactor.AI.Layout;
 
 /// <summary>
-/// Adjusts actor and prop positions to be inside bounds, avoid overlaps,
-/// and optionally snap to walkmesh triangle centroids.
+/// Adjusts actor and prop positions to be inside bounds, avoid overlaps, and — when the field
+/// has a walkmesh — lie on walkable floor (moving each off-mesh point to the nearest walkable
+/// point). Without a walkmesh, positions are treated as 320x240 screen pixels.
 /// </summary>
 public static class LayoutGenerator
 {
@@ -15,15 +16,30 @@ public static class LayoutGenerator
     // Public API
     // -----------------------------------------------------------------------
 
+    /// <summary>Bounds used when no walkmesh is available: the 320x240 FF7 screen.</summary>
+    public static readonly Rect DefaultBounds = new(0, 0, 320, 240);
+
     /// <summary>
-    /// Compute field pixel bounds; falls back to 320x240 if unavailable.
-    /// NOTE: Abstract Field has no Bounds property, so we always use the default.
+    /// Placement bounds: the walkmesh X/Y bounding box when the field has one (positions are then
+    /// field coordinates), otherwise <see cref="DefaultBounds"/>.
     /// </summary>
-    public static Rect FieldBounds(Field? field)
-    {
-        // The abstract Field class has no Bounds property; use default FF7 resolution.
-        return new Rect(0, 0, 320, 240);
-    }
+    public static Rect FieldBounds(Field? field) =>
+        WalkmeshGeometry.Bounds(field?.Walkmesh) ?? DefaultBounds;
+
+    /// <summary>The field's walkmesh when it has triangles, otherwise null.</summary>
+    public static IdFile? WalkmeshOf(Field? field) =>
+        WalkmeshGeometry.HasTriangles(field?.Walkmesh) ? field!.Walkmesh : null;
+
+    /// <summary>
+    /// The walkable geometry placements should respect: the plan's own proposed walkmesh when it has
+    /// valid regions (the model designed the layout around it), otherwise the field's walkmesh.
+    /// </summary>
+    public static IdFile? PlacementWalkmesh(ScenePlan plan, Field? field) =>
+        WalkmeshBuilder.BuildValidRegions(plan.Layout?.Walkmesh) ?? WalkmeshOf(field);
+
+    /// <summary>Placement bounds for a plan: the placement walkmesh's bounding box, else <see cref="DefaultBounds"/>.</summary>
+    public static Rect PlacementBounds(ScenePlan plan, Field? field) =>
+        WalkmeshGeometry.Bounds(PlacementWalkmesh(plan, field)) ?? DefaultBounds;
 
     /// <summary>
     /// Adjust placements in-place in the <see cref="ScenePlan"/>.
@@ -32,16 +48,31 @@ public static class LayoutGenerator
     public static LayoutResult Adjust(ScenePlan plan, Field? field, LayoutOptions? opts = null)
     {
         var notes = new List<string>();
-        var bounds = FieldBounds(field);
+        var placementWalkmesh = PlacementWalkmesh(plan, field);
+        var bounds = WalkmeshGeometry.Bounds(placementWalkmesh) ?? DefaultBounds;
+        var walkmesh = (opts?.ConstrainToWalkmesh ?? true) ? placementWalkmesh : null;
         var minDistancePx = opts?.MinDistancePx ?? 24;
         var enableWalkmeshSnap = opts?.EnableWalkmeshSnap ?? false;
         var nudgeStepPx = opts?.NudgeStepPx ?? 8;
         var maxNudgeTries = opts?.MaxNudgeTries ?? 200;
 
+        // Move a point onto walkable floor when a walkmesh exists; returns the (possibly) new point.
+        Point OntoWalkmesh(Point pt, string what)
+        {
+            if (walkmesh == null || WalkmeshGeometry.Contains(walkmesh, pt))
+                return pt;
+            var moved = WalkmeshGeometry.NearestWalkable(walkmesh, pt);
+            notes.Add($"Moved {what} from {pt.X},{pt.Y} onto walkmesh at {moved.X},{moved.Y}");
+            return moved;
+        }
+
         // Ensure Layout exists
         if (plan.Layout == null)
         {
-            plan.Layout = new LayoutDef { SpawnPoint = new Point(160, 120) };
+            var center = walkmesh != null
+                ? WalkmeshGeometry.NearestWalkable(walkmesh, WalkmeshGeometry.Centroid(walkmesh)!.Value)
+                : new Point(160, 120);
+            plan.Layout = new LayoutDef { SpawnPoint = center };
             notes.Add("Created default layout with center spawn point");
         }
 
@@ -52,6 +83,7 @@ public static class LayoutGenerator
             plan.Layout.SpawnPoint = ClampPoint(plan.Layout.SpawnPoint, bounds);
             notes.Add($"Clamped spawnPoint from {before.X},{before.Y} to {plan.Layout.SpawnPoint.X},{plan.Layout.SpawnPoint.Y}");
         }
+        plan.Layout.SpawnPoint = OntoWalkmesh(plan.Layout.SpawnPoint, "spawnPoint");
 
         // --- Clamp props and record as obstacles ---
         var obstacles = new List<Point>();
@@ -67,6 +99,7 @@ public static class LayoutGenerator
                     prop.Position = ClampPoint(prop.Position, bounds);
                     notes.Add($"Clamped prop '{prop.Id}' from {before.X},{before.Y} to {prop.Position.X},{prop.Position.Y}");
                 }
+                prop.Position = OntoWalkmesh(prop.Position, $"prop '{prop.Id}'");
                 obstacles.Add(prop.Position);
             }
         }
@@ -79,7 +112,7 @@ public static class LayoutGenerator
                 var before = plan.Layout.SpawnPoint;
                 var obstacleList = new List<Point>(obstacles);
                 plan.Layout.SpawnPoint = NudgeToFree(plan.Layout.SpawnPoint, bounds, obstacleList,
-                    minDistancePx, nudgeStepPx, maxNudgeTries);
+                    minDistancePx, nudgeStepPx, maxNudgeTries, walkmesh);
                 notes.Add($"Nudged spawnPoint from {before.X},{before.Y} to {plan.Layout.SpawnPoint.X},{plan.Layout.SpawnPoint.Y} to avoid props");
                 break;
             }
@@ -113,6 +146,8 @@ public static class LayoutGenerator
                 }
             }
 
+            pos = OntoWalkmesh(pos, $"actor '{actor.Id}'");
+
             // Avoid overlaps with already placed actors, props, and spawn
             var occupied = new List<Point>(placed.Count + obstacles.Count + 1);
             occupied.AddRange(placed);
@@ -120,7 +155,7 @@ public static class LayoutGenerator
             occupied.Add(plan.Layout.SpawnPoint);
 
             var freePos = NudgeToFree(pos, bounds, occupied,
-                minDistancePx, nudgeStepPx, maxNudgeTries);
+                minDistancePx, nudgeStepPx, maxNudgeTries, walkmesh);
 
             if (freePos != pos)
                 notes.Add($"Nudged actor '{actor.Id}' from {pos.X},{pos.Y} to {freePos.X},{freePos.Y} to avoid overlaps");
@@ -143,10 +178,11 @@ public static class LayoutGenerator
         return (double)dx * dx + (double)dy * dy;
     }
 
+    /// <summary>Clamp into the half-open <paramref name="bounds"/> so the result satisfies <see cref="Rect.Contains(Point)"/>.</summary>
     private static Point ClampPoint(Point p, Rect bounds)
     {
-        var x = Math.Clamp(p.X, bounds.X, bounds.X + bounds.Width);
-        var y = Math.Clamp(p.Y, bounds.Y, bounds.Y + bounds.Height);
+        var x = Math.Clamp(p.X, bounds.X, bounds.X + Math.Max(0, bounds.Width - 1));
+        var y = Math.Clamp(p.Y, bounds.Y, bounds.Y + Math.Max(0, bounds.Height - 1));
         return new Point(x, y);
     }
 
@@ -157,11 +193,11 @@ public static class LayoutGenerator
 
     /// <summary>
     /// Spiral search to find a free position near <paramref name="start"/>
-    /// that is at least <paramref name="minDist"/> away from all <paramref name="placed"/> points
-    /// and within <paramref name="bounds"/>.
+    /// that is at least <paramref name="minDist"/> away from all <paramref name="placed"/> points,
+    /// within <paramref name="bounds"/>, and walkable when a <paramref name="walkmesh"/> is given.
     /// </summary>
     private static Point NudgeToFree(Point start, Rect bounds, List<Point> placed,
-                                     int minDist, int step, int maxTries)
+                                     int minDist, int step, int maxTries, IdFile? walkmesh = null)
     {
         var minDist2 = (double)minDist * minDist;
 
@@ -170,7 +206,7 @@ public static class LayoutGenerator
             foreach (var q in placed)
                 if (DistSq(pt, q) < minDist2)
                     return false;
-            return bounds.Contains(pt);
+            return bounds.Contains(pt) && (walkmesh == null || WalkmeshGeometry.Contains(walkmesh, pt));
         }
 
         if (IsFree(start))

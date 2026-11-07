@@ -20,6 +20,15 @@ public sealed class LLMConfig
     /// <summary>Request timeout in milliseconds; 0 lets the caller pick a backend-appropriate default.</summary>
     public int TimeoutMs { get; init; }
 
+    /// <summary>Default number of automatic repair re-prompts after a malformed or invalid response.</summary>
+    public const int DefaultMaxRepairAttempts = 2;
+
+    /// <summary>
+    /// How many times the pipeline re-prompts the model with the exact parser/validator errors
+    /// when its response cannot be extracted, parsed, or validated. <c>0</c> disables repair.
+    /// </summary>
+    public int MaxRepairAttempts { get; init; } = DefaultMaxRepairAttempts;
+
     // HTTP backend (OpenAI-compatible endpoint, e.g. LM Studio) — kept as an offline fallback.
     public string Endpoint { get; init; } = string.Empty;
     public string ApiKey { get; init; } = string.Empty;
@@ -55,6 +64,7 @@ public sealed class LLMConfig
                         CodexExecutable = GetStringOr(root, "codex_executable", "codex"),
                         CodexModel = GetStringOr(root, "codex_model", string.Empty),
                         TimeoutMs = root.TryGetProperty("timeout_ms", out var tm) && tm.ValueKind == JsonValueKind.Number ? tm.GetInt32() : 0,
+                        MaxRepairAttempts = ReadRepairAttempts(root),
                         Endpoint = GetStringOr(root, "endpoint", string.Empty),
                         ApiKey = root.TryGetProperty("apiKey", out var ak) ? ak.GetString() ?? string.Empty
                                : GetStringOr(root, "api_key", string.Empty),
@@ -70,6 +80,17 @@ public sealed class LLMConfig
 
         return new LLMConfig();
     }
+
+    /// <summary>
+    /// Read <c>max_repair_attempts</c>, clamping negatives to 0 and falling back to
+    /// <see cref="DefaultMaxRepairAttempts"/> when absent or not an integer.
+    /// </summary>
+    internal static int ReadRepairAttempts(JsonElement root) =>
+        root.TryGetProperty("max_repair_attempts", out var el)
+        && el.ValueKind == JsonValueKind.Number
+        && el.TryGetInt32(out var value)
+            ? Math.Max(0, value)
+            : DefaultMaxRepairAttempts;
 
     private static string GetStringOr(JsonElement root, string key, string fallback) =>
         root.TryGetProperty(key, out var el) && el.ValueKind == JsonValueKind.String

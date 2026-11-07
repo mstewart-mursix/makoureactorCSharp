@@ -18,7 +18,7 @@ public sealed class LlmAppSettings
     public string CodexExecutable { get; set; } = "codex";
     public string CodexModel { get; set; } = string.Empty;
     public int TimeoutMs { get; set; }
-    public int RepairAttempts { get; set; } = 1;
+    public int RepairAttempts { get; set; } = 2;
     public string Endpoint { get; set; } = "http://localhost:1234/v1/chat/completions";
     public string ApiKey { get; set; } = "lm-studio";
     public string Model { get; set; } = "qwen/qwen3-coder-30b";

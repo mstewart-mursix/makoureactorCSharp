@@ -469,12 +469,12 @@ public class FieldArchiveTests
         foreach (var text in texts)
         {
             writer.Write(offset);
-            offset += checked((ushort)(Encoding.ASCII.GetByteCount(text) + 1));
+            offset += checked((ushort)(FF7TextCodec.Encode(text, includeTerminator: false).Length + 1));
         }
 
         foreach (var text in texts)
         {
-            writer.Write(Encoding.ASCII.GetBytes(text));
+            writer.Write(FF7TextCodec.Encode(text, includeTerminator: false));
             writer.Write((byte)0xFF);
         }
 

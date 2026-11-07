@@ -81,6 +81,7 @@ public sealed class JsonAppSettingsService : IAppSettingsService
             migrated.CodexExecutable = ReadString(root, "codex_executable", migrated.CodexExecutable);
             migrated.CodexModel = ReadString(root, "codex_model", migrated.CodexModel);
             migrated.TimeoutMs = ReadInt32(root, "timeout_ms", migrated.TimeoutMs);
+            migrated.RepairAttempts = ReadInt32(root, "max_repair_attempts", migrated.RepairAttempts);
             migrated.Endpoint = NormalizeLegacyEndpoint(ReadString(root, "endpoint", migrated.Endpoint));
             migrated.ApiKey = ReadString(root, "api_key", migrated.ApiKey);
             migrated.Model = ReadString(root, "model", migrated.Model);

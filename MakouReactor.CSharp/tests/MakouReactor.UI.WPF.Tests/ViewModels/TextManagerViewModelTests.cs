@@ -14,7 +14,7 @@ public sealed class TextManagerViewModelTests
     {
         var texts = new[]
         {
-            new FF7String(FF7TextCodec.Decode([0xEE, 0xED, 0xD3, 0x48, 0x69, 0x03, 0xD9, 0xFF])),
+            new FF7String(FF7TextCodec.Decode([0xEA, 0xFE, 0xD3, 0x28, 0x49, 0xE5, 0xFE, 0xD9, 0xFF])),
             new FF7String(string.Empty),
         };
 
@@ -23,9 +23,9 @@ public sealed class TextManagerViewModelTests
         viewModel.FieldName.Should().Be("md1stin");
         viewModel.Texts.Should().HaveCount(2);
         viewModel.Texts[0].Id.Should().Be(0);
-        viewModel.Texts[0].Value.Should().Be("{CLOUD}{NEW}{BLUE}Hi{x03}{WHITE}");
-        viewModel.Texts[0].Length.Should().Be(32);
-        viewModel.Texts[0].Preview.Should().Be("{CLOUD}{NEW}{BLUE}Hi{x03}{WHITE}");
+        viewModel.Texts[0].Value.Should().Be("{CLOUD}{BLUE}Hi{xE5}{WHITE}");
+        viewModel.Texts[0].Length.Should().Be(27);
+        viewModel.Texts[0].Preview.Should().Be("{CLOUD}{BLUE}Hi{xE5}{WHITE}");
         viewModel.Texts[1].Id.Should().Be(1);
         viewModel.Texts[1].Preview.Should().Be("(empty)");
     }
@@ -37,12 +37,12 @@ public sealed class TextManagerViewModelTests
             "md1stin",
             [new FF7String("Placeholder")]);
 
-        viewModel.Texts[0].Value = "{CLOUD}{NEW}{BLUE}Hi{x03}{WHITE}";
+        viewModel.Texts[0].Value = "{CLOUD}{BLUE}Hi{xE5}{WHITE}";
 
         var text = viewModel.ToFF7Strings().Single();
         var encoded = FF7TextCodec.Encode(text.Value);
 
-        encoded.Should().Equal([0xEE, 0xED, 0xD3, 0x48, 0x69, 0x03, 0xD9, 0xFF]);
+        encoded.Should().Equal([0xEA, 0xFE, 0xD3, 0x28, 0x49, 0xE5, 0xFE, 0xD9, 0xFF]);
         FF7TextCodec.Decode(encoded).Should().Be(viewModel.Texts[0].Value);
     }
 

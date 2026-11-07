@@ -103,6 +103,7 @@ public sealed class AppSettingsServiceTests
               "codex_executable": "C:\\tools\\codex.cmd",
               "codex_model": "gpt-5-codex",
               "timeout_ms": 90000,
+              "max_repair_attempts": 4,
               "endpoint": "http://localhost:1234/v1",
               "api_key": "legacy-key",
               "model": "legacy-model"
@@ -115,6 +116,7 @@ public sealed class AppSettingsServiceTests
         settings.Llm.CodexExecutable.Should().Be("C:\\tools\\codex.cmd");
         settings.Llm.CodexModel.Should().Be("gpt-5-codex");
         settings.Llm.TimeoutMs.Should().Be(90000);
+        settings.Llm.RepairAttempts.Should().Be(4);
         settings.Llm.Endpoint.Should().Be("http://localhost:1234/v1/chat/completions");
         settings.Llm.ApiKey.Should().Be("legacy-key");
         settings.Llm.Model.Should().Be("legacy-model");
@@ -190,51 +192,57 @@ public sealed class AppSettingsServiceTests
     [Fact]
     public void recent_files_are_deduplicated_reordered_and_capped()
     {
+        // Rooted, platform-native paths: RecentFilesService stores Path.GetFullPath results.
+        var root = Path.Combine(Path.GetTempPath(), "mr-recent", "A");
+        string P(string name) => Path.Combine(root, name);
+
         var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName(), "settings.json");
         var settings = new AppSettings
         {
             RecentFiles =
             [
-                "C:\\A\\one.lgp",
-                "C:\\A\\ONE.lgp",
+                P("one.lgp"),
+                P("ONE.lgp"),
             ],
         };
         var settingsService = new JsonAppSettingsService(path);
         var recentFiles = new RecentFilesService(settings, settingsService, maxItems: 3);
 
-        recentFiles.Add("C:\\A\\two.lgp");
-        recentFiles.Add("C:\\A\\three.lgp");
-        recentFiles.Add("C:\\A\\one.lgp");
-        recentFiles.Add("C:\\A\\four.lgp");
+        recentFiles.Add(P("two.lgp"));
+        recentFiles.Add(P("three.lgp"));
+        recentFiles.Add(P("one.lgp"));
+        recentFiles.Add(P("four.lgp"));
 
         recentFiles.RecentFiles.Should().Equal(
-            "C:\\A\\four.lgp",
-            "C:\\A\\one.lgp",
-            "C:\\A\\three.lgp");
+            P("four.lgp"),
+            P("one.lgp"),
+            P("three.lgp"));
         new JsonAppSettingsService(path).Load().RecentFiles.Should().Equal(recentFiles.RecentFiles);
     }
 
     [Fact]
     public void shell_session_loads_settings_and_exposes_recent_file_service()
     {
+        var root = Path.Combine(Path.GetTempPath(), "mr-recent", "ff7");
+        var flevel = Path.Combine(root, "flevel.lgp");
+        var other = Path.Combine(root, "other.lgp");
+
         var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName(), "settings.json");
         var settingsService = new JsonAppSettingsService(path);
         settingsService.Save(new AppSettings
         {
             JapaneseText = true,
-            RecentFiles = ["C:\\ff7\\flevel.lgp"],
+            RecentFiles = [flevel],
         });
 
         var session = new ShellSessionService(settingsService);
 
         session.Settings.JapaneseText.Should().BeTrue();
-        session.RecentFiles.RecentFiles.Should().Equal("C:\\ff7\\flevel.lgp");
+        session.RecentFiles.RecentFiles.Should().Equal(flevel);
 
-        session.RecentFiles.Add("C:\\ff7\\other.lgp");
+        session.RecentFiles.Add(other);
 
-        new JsonAppSettingsService(path).Load().RecentFiles.Should().Equal(
-            "C:\\ff7\\other.lgp",
-            "C:\\ff7\\flevel.lgp");
+        new JsonAppSettingsService(path).Load().RecentFiles.Should().Equal(other, flevel);
     }
 
     [Fact]

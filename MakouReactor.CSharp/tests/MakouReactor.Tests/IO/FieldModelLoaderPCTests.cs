@@ -27,6 +27,28 @@ public sealed class FieldModelLoaderPCTests
     }
 
     [Fact]
+    public void save_keeps_the_header_field_scale_and_unpadded_model_scale()
+    {
+        // Every shipped field stores the Section 1 scale at bytes 4-5 and short scales like "32"
+        // without zero padding (FieldModelLoaderPC.cpp: QString::number(scale)).
+        var original = BuildModelLoader(fieldScale: 512, modelScale: "32");
+        var loader = FieldModelLoaderPC.Open(original);
+
+        loader.FieldScale.Should().Be(512);
+        loader.Models[0].Scale.Should().Be(32);
+        loader.Save().Should().Equal(original);
+        BitConverter.ToUInt16(loader.Save(fieldScale: 384), 4).Should().Be(384);
+    }
+
+    [Fact]
+    public void unparseable_model_scale_falls_back_to_the_field_scale()
+    {
+        var loader = FieldModelLoaderPC.Open(BuildModelLoader(fieldScale: 256, modelScale: "x"));
+
+        loader.Models[0].Scale.Should().Be(256);
+    }
+
+    [Fact]
     public void open_rejects_truncated_record()
     {
         var open = () => FieldModelLoaderPC.Open([0, 0, 1, 0, 0, 0, 20, 0]);
@@ -85,21 +107,23 @@ public sealed class FieldModelLoaderPCTests
 
     internal static byte[] BuildModelLoader(
         string characterName = "Cloud",
-        IReadOnlyList<(string Name, ushort Unknown)>? animations = null)
+        IReadOnlyList<(string Name, ushort Unknown)>? animations = null,
+        ushort fieldScale = 0,
+        string modelScale = "512")
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Encoding.Latin1);
 
         writer.Write((ushort)0);
         writer.Write((ushort)1);
-        writer.Write((ushort)0);
+        writer.Write(fieldScale);
 
         WriteModel(
             writer,
             characterName,
             7,
             "AAAA",
-            "512",
+            modelScale,
             animations ?? [("idle", (ushort)1), ("walk", (ushort)2)]);
 
         return stream.ToArray();

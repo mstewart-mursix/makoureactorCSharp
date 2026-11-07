@@ -40,6 +40,34 @@ public sealed class FieldEditSnapshotTests
         restored.IsModified.Should().BeTrue();
     }
 
+    [Fact]
+    public void restore_undoes_a_walkmesh_apply()
+    {
+        var field = FieldPC.CreateEmpty("md1stin");
+        var snapshot = FieldEditSnapshot.Capture(field);
+        var plan = new MakouReactor.Core.Models.ScenePlan();
+        plan.Layout.Walkmesh = new WalkmeshPlan
+        {
+            Regions =
+            {
+                new WalkmeshRegion
+                {
+                    Id = "r",
+                    Polygon = [new Point(0, 0), new Point(100, 0), new Point(100, 100), new Point(0, 100)],
+                },
+            },
+        };
+
+        MakouReactor.AI.Mapping.ScenePlanMapper.ApplyToField(plan, field,
+            new ApplyOptions { PreviewOnly = false, WalkmeshMode = WalkmeshMode.Replace });
+        field.Walkmesh!.TriangleCount.Should().Be(2);
+
+        var restored = snapshot.Restore();
+
+        restored.Walkmesh!.TriangleCount.Should().Be(0);
+        restored.IsModified.Should().BeFalse();
+    }
+
     private static byte[] BuildPcField(byte[] section1)
     {
         var sections = new byte[9][];
@@ -104,12 +132,12 @@ public sealed class FieldEditSnapshotTests
         foreach (var text in texts)
         {
             writer.Write(offset);
-            offset += checked((ushort)(Encoding.ASCII.GetByteCount(text) + 1));
+            offset += checked((ushort)(FF7TextCodec.Encode(text, includeTerminator: false).Length + 1));
         }
 
         foreach (var text in texts)
         {
-            writer.Write(Encoding.ASCII.GetBytes(text));
+            writer.Write(FF7TextCodec.Encode(text, includeTerminator: false));
             writer.Write((byte)0xFF);
         }
 

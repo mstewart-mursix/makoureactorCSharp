@@ -221,13 +221,12 @@ public sealed class DialogSmokeTests
         foreach (var text in texts)
         {
             writer.Write(offset);
-            offset += checked((ushort)(Encoding.ASCII.GetByteCount(text) + 1));
+            offset += checked((ushort)MakouReactor.Core.Models.FF7TextCodec.Encode(text).Length);
         }
 
         foreach (var text in texts)
         {
-            writer.Write(Encoding.ASCII.GetBytes(text));
-            writer.Write((byte)0xFF);
+            writer.Write(MakouReactor.Core.Models.FF7TextCodec.Encode(text));
         }
 
         return stream.ToArray();

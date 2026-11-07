@@ -147,6 +147,14 @@ tests over small synthetic fixtures built in code.
 
 ### 1e. Real `ScenePlanMapper` opcode emission
 
+> **Status: implemented.** `Core/Models/ScriptBuilder.cs` (raw opcodes, label/jump fixups,
+> short→long widening per `Script::compile`) and `AI/Mapping/SceneScriptEmitter.cs`. Ids, layouts
+> and sizes cite `Opcode.h`/`Opcode.cpp`. `ApplyResult` gains structured groups/texts/opcode
+> counts/warnings; PreviewOnly never mutates. Open items (warned in the summary): new actors need
+> Model Loader entries; direction byte orientation (S=0) and the MUSIC index semantics are unverified;
+> `zone` events now get a Location group with a `LINE` across the zone's middle (longer axis) and run from "S5 - Go 1x"; move speed ignored.
+> A binary-format audit (LZS/LGP verified; Section1/opcode sizes/FF7TextCodec/FieldPC fixed) preceded it.
+
 Rewrite `MakouReactor.AI/Mapping/ScenePlanMapper.ApplyToField` to emit actual script data.
 Verify every opcode id against the enum in `src/core/field/Opcode.h` — do not trust
 memory or wikis for hex values.
@@ -183,6 +191,16 @@ the emitted byte structure decodes back (via the 1c reader) to the same opcodes;
 
 ## Phase 2 — Field context in the prompt
 
+> **Status: implemented.** `FieldContextBuilder.Describe` (walkmesh bounds/centroid/coverage,
+> 16×12 occupancy grid, groups, exits, sample dialog; deterministic, size-capped);
+> `PromptBuilder.UserPrompt(..., fieldContext)`; `SceneGenerationService.BuildRequest/GenerateAsync`
+> pass it when a field is given; CLI `generate --archive <lgp|dir> --field <name>`.
+> Coordinate convention: **with a walkmesh, plan positions are field X/Y coordinates** and
+> `LayoutGenerator.FieldBounds` is the walkmesh bounding box (`WalkmeshGeometry`); without one,
+> the 320×240 screen fallback is unchanged. `LayoutGenerator.Adjust` moves off-mesh spawn/props/
+> actors to the nearest walkable point; `ScenePlanValidator` reports off-mesh positions and move
+> targets as Errors (which feed the Phase 3 repair loop). Tests: `tests/MakouReactor.Tests/Prompts/FieldContextTests.cs`.
+
 Generation currently runs blind (`field: null`, width/height guesses). Feed the model
 reality; this is the biggest output-quality lever.
 
@@ -206,6 +224,12 @@ reality; this is the biggest output-quality lever.
   point-in-walkmesh cases; prompt includes context iff field provided.
 
 ## Phase 3 — Self-repair loop (auto-retry on bad output)
+
+> **Status: implemented.** `SceneGenerationService.GenerateAsync` re-prompts on extraction,
+> parse, or validation errors (transport failures and cancellation are never retried);
+> `SceneGenerationResult.Attempts` / `RepairCount` record each call; `max_repair_attempts`
+> (default 2) is read by both loaders and migrated into `LlmAppSettings.RepairAttempts`, which
+> the WPF generator now honours. Tests: `tests/MakouReactor.Tests/SceneGenerationRepairTests.cs`.
 
 Turn model sloppiness into reliability. Nearly free on the subscription.
 
@@ -253,6 +277,12 @@ Codex runs take 1–5 minutes; the UI must not look frozen, and users iterate.
 
 ## Phase 5 — Preview, diff, and safe apply
 
+> **Status: mostly implemented.** `Core/IO/SafeArchiveWriter.cs` (timestamped backups, keep 5,
+> staged write + byte-identical read-back, atomic replace, restore newest); CLI `apply`
+> (`--dry-run`) and `revert` (`--list`); WPF "Map preview" tab (`AI/ScenePreviewModel.cs`,
+> `AI/ScenePreviewCanvas.cs`). Remaining: WPF apply/save still uses `LgpArchive`'s single `.bak`
+> instead of `SafeArchiveWriter`; existing NPC positions are not drawn yet (needs script decoding).
+
 The "never corrupt flevel data" promise, made visible.
 
 - **Preview canvas** (WPF): a `Canvas`/custom control drawing, in field coordinates:
@@ -264,7 +294,7 @@ The "never corrupt flevel data" promise, made visible.
   script/opcode counts, text entries to be added, warnings (unknown items/tracks,
   out-of-walkmesh placements). Apply button stays disabled while validation has errors.
 - **Safe apply pipeline** in a new `MakouReactor.Core/IO/SafeArchiveWriter.cs`:
-  1. Copy `flevel.lgp` → `flevel.lgp.mr-backup-yyyyMMdd-HHmmss` (keep newest 5, prune rest).
+  1. Copy `flevel.lgp` → `flevel.lgp.mr-backup-yyyyMMdd-HHmmss` (keep newest 5 plus the oldest, prune rest).
   2. Write the modified archive to `flevel.lgp.tmp`, verify it re-opens and the modified
      field parses, then atomically replace (`File.Replace`).
   3. On any exception: delete tmp, original untouched, surface the error.
@@ -273,7 +303,7 @@ The "never corrupt flevel data" promise, made visible.
 - CLI: `apply --archive <flevel.lgp> --field <name> --plan <plan.json> [--dry-run]` using
   the same pipeline; `--dry-run` prints the diff summary.
 - Tests: synthetic archive apply → backup exists, content updated, re-openable; failure
-  injected mid-write → original bytes untouched; prune keeps 5.
+  injected mid-write → original bytes untouched; prune keeps 5 plus the original.
 
 ## Phase 6 — Walkmesh generation and editing
 
@@ -298,6 +328,12 @@ Currently the plan schema only carries a `walkmeshHint` string. Make walkmesh a 
 
 ## Phase 7 — Onboarding, settings UI, packaging
 
+> **Status: implemented.** `AI/Backends/CodexSetupChecker.cs` (`codex login status`, 10s timeout),
+> CLI `doctor` uses it, WPF `Shell/CodexSetupBanner` (async, dismissible; only started by `App`).
+> Settings dialog already existed; `RepairAttempts` is now honoured. CI: `.github/workflows/csharp.yml`
+> (Windows full solution + Linux) and `csharp-release.yml` (self-contained win-x64 zips on
+> `csharp-v*` tags; untested until on the default branch).
+
 First-run experience decides whether a modder ever reaches the features above.
 
 - **Startup doctor** (WPF): on launch run the existing CLI doctor logic in-process
@@ -317,6 +353,19 @@ First-run experience decides whether a modder ever reaches the features above.
 - Tests: settings round-trip (save → loader reads back identical config).
 
 ## Phase 8 — Fidelity and power-user extras
+
+> **Status: partly implemented.** `Core/Text/FF7TextMetrics.cs` (port of `FF7Font::calcSize`, used
+> by the mapper for WINDOW sizing and word wrap) and `Core/Data/GameTables.cs` (music tracks from
+> `Data.cpp` with "did you mean" suggestions in the validator). Item names are not embedded (the C++
+> app reads them from kernel data). Batch generation is implemented: CLI `batch` driving
+> `AI/Batch/BatchRunner.cs` (per-field plan JSONs, `batch-report.json` + stdout table, `--apply`
+> through the shared `AI/Mapping/ScenePlanApplyPipeline.cs`; exit 0 all ok, 1 bad input or unknown
+> field, 2 validation errors/failures; `seed` is recorded only). Dialog window auto-placement is done
+> (`AI/Mapping/DialogWindowPlacement.cs`, `Core/Models/CaFile.cs`): each `say` WINDOW goes in the
+> vertical half opposite the speaker, clamped with a port of `FF7Window::realPos()` (x 8..312,
+> y 8..223); with a walkmesh the speaker is projected through camera 0 (port of
+> `WalkmeshWidget::paintGL`'s view/projection, background scrolling not modelled), or placed from its
+> Y within the walkmesh bounds with an "approximate" warning when the field has no camera.
 
 - **FF7-accurate text metrics:** port character width tables from `src/core/FF7Font.cpp` /
   `src/widgets/TextPreview.cpp` into `MakouReactor.Core/Text/FF7TextMetrics.cs`.

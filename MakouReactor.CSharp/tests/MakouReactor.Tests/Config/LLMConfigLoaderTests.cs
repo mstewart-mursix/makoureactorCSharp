@@ -20,9 +20,11 @@ public class LLMConfigLoaderTests
         config.CodexExecutable.Should().Be("codex");
         config.CodexModel.Should().BeEmpty();
         config.TimeoutMs.Should().Be(0);
+        config.MaxRepairAttempts.Should().Be(2);
         config.Endpoint.Should().Be("http://localhost:1234/v1/chat/completions");
         config.ApiKey.Should().Be("lm-studio");
         config.Model.Should().Be("qwen/qwen3-coder-30b");
+        config.MaxRepairAttempts.Should().Be(LLMConfig.DefaultMaxRepairAttempts);
     }
 
     [Fact]
@@ -35,7 +37,8 @@ public class LLMConfigLoaderTests
   ""backend"": ""codex"",
   ""codex_executable"": ""C:\\tools\\codex.cmd"",
   ""codex_model"": ""gpt-5-codex"",
-  ""timeout_ms"": 120000
+  ""timeout_ms"": 120000,
+  ""max_repair_attempts"": 3
 }";
             File.WriteAllText(tempFile, json);
 
@@ -45,6 +48,8 @@ public class LLMConfigLoaderTests
             config.CodexExecutable.Should().Be(@"C:\tools\codex.cmd");
             config.CodexModel.Should().Be("gpt-5-codex");
             config.TimeoutMs.Should().Be(120000);
+            config.MaxRepairAttempts.Should().Be(3);
+            LLMConfig.Load(tempFile).MaxRepairAttempts.Should().Be(3);
         }
         finally
         {
@@ -184,5 +189,40 @@ public class LLMConfigLoaderTests
         {
             if (File.Exists(tempFile)) File.Delete(tempFile);
         }
+    }
+
+    [Theory]
+    [InlineData("\"max_repair_attempts\": 5", 5)]
+    [InlineData("\"max_repair_attempts\": 0", 0)]
+    [InlineData("\"max_repair_attempts\": -3", 0)]
+    [InlineData("\"max_repair_attempts\": \"lots\"", 2)]
+    [InlineData("\"backend\": \"codex\"", 2)]
+    public void max_repair_attempts_is_read_by_both_loaders(string property, int expected)
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), "llm_config_test_" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            File.WriteAllText(tempFile, "{ " + property + " }");
+
+            LLMConfigLoader.Load(tempFile).MaxRepairAttempts.Should().Be(expected);
+            LLMConfig.Load(tempFile).MaxRepairAttempts.Should().Be(expected);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void repository_config_template_declares_default_repair_attempts()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MakouReactor.sln")))
+            dir = dir.Parent;
+        dir.Should().NotBeNull("tests run from inside the solution tree");
+
+        var template = Path.Combine(dir!.FullName, "config", "llm.config.template.json");
+        LLMConfigLoader.Load(template).MaxRepairAttempts.Should().Be(LLMConfig.DefaultMaxRepairAttempts);
+        File.ReadAllText(template).Should().Contain("\"max_repair_attempts\"");
     }
 }

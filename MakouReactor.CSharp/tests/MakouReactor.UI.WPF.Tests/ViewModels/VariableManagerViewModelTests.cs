@@ -43,8 +43,8 @@ public sealed class VariableManagerViewModelTests
     {
         var section = new Section1File();
         var group = new GrpScript("cloud");
-        group.SetScript(0, new Script([0x80, 0x21, 0x10, 0x20]));
-        group.SetScript(1, new Script([0x95, 0x30, 0x44]));
+        group.SetScript(0, new Script([0x80, 0x12, 0x10, 0x20]));
+        group.SetScript(1, new Script([0x95, 0x03, 0x44]));
         section.GrpScripts.Add(group);
         return section;
     }

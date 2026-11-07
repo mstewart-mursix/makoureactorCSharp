@@ -81,17 +81,17 @@ public class Section1FileTests
         var data = BuildSection1WithRawText([0xA6, 0xA7, 0xFF]);
         var section = Section1File.Open(data);
 
-        section.Texts[0].Value.Should().Be("{xA6}{xA7}");
+        section.Texts[0].Value.Should().Be("∆«");
 
         section.SetJapaneseText(true);
 
         section.JapaneseText.Should().BeTrue();
-        section.Texts[0].Value.Should().Be("ｦｧ");
+        section.Texts[0].Value.Should().Be("ィぃ");
         section.IsModified.Should().BeFalse();
 
         section.SetJapaneseText(false);
 
-        section.Texts[0].Value.Should().Be("{xA6}{xA7}");
+        section.Texts[0].Value.Should().Be("∆«");
         section.IsModified.Should().BeFalse();
     }
 
@@ -123,6 +123,22 @@ public class Section1FileTests
             0x43, 0x02,
             0x48, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
         ]);
+    }
+
+    [Fact]
+    public void spcnm_text_references_are_tracked_and_shifted()
+    {
+        // SPECIAL/SPCNM: 0x0F 0xFD charID textID.
+        var data = BuildSection1WithScriptAndTexts(
+            [0x0F, 0xFD, 0x00, 0x01],
+            ["Unused zero", "Name text", "Unused two"]);
+        var section = Section1File.Open(data);
+
+        section.ListUsedTexts().Should().Equal(1);
+
+        section.InsertText(1, new FF7String("Inserted"));
+
+        section.GrpScripts[0].Scripts[0].RawBytes.ToArray().Should().Equal([0x0F, 0xFD, 0x00, 0x02]);
     }
 
     [Fact]
@@ -375,12 +391,12 @@ public class Section1FileTests
         foreach (var text in texts)
         {
             writer.Write(offset);
-            offset += checked((ushort)(Encoding.ASCII.GetByteCount(text) + 1));
+            offset += checked((ushort)(FF7TextCodec.Encode(text, includeTerminator: false).Length + 1));
         }
 
         foreach (var text in texts)
         {
-            writer.Write(Encoding.ASCII.GetBytes(text));
+            writer.Write(FF7TextCodec.Encode(text, includeTerminator: false));
             writer.Write((byte)0xFF);
         }
 

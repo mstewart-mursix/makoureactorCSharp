@@ -9,6 +9,12 @@ public sealed class FieldModelLoaderPC
     public List<FieldModelInfoPC> Models { get; } = [];
     public int ModelCount => Models.Count;
 
+    /// <summary>
+    /// Field scale stored in the section header (bytes 4-5). The C++ writer stores the Section 1
+    /// scale here (<c>FieldModelLoaderPC::save</c>); in the shipped flevel.lgp it always matches it.
+    /// </summary>
+    public ushort FieldScale { get; set; }
+
     public static FieldModelLoaderPC Open(ReadOnlySpan<byte> data)
     {
         var loader = new FieldModelLoaderPC();
@@ -23,6 +29,7 @@ public sealed class FieldModelLoaderPC
 
         Models.Clear();
         var count = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(2, 2));
+        FieldScale = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(4, 2));
         var cursor = 6;
 
         for (var modelIndex = 0; modelIndex < count; modelIndex++)
@@ -38,7 +45,8 @@ public sealed class FieldModelLoaderPC
             var unknown = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(cursor + 2 + charNameLength, 2));
             var hrcName = ReadLatin1(data.Slice(cursor + 4 + charNameLength, 8));
             var typeText = ReadLatin1(data.Slice(cursor + 12 + charNameLength, 4));
-            var scale = ushort.TryParse(typeText, out var parsedScale) ? parsedScale : (ushort)0;
+            // Like the C++ reader, an unparseable per-model scale falls back to the field scale.
+            var scale = ushort.TryParse(typeText, out var parsedScale) ? parsedScale : FieldScale;
             var animationCount = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(cursor + 16 + charNameLength, 2));
 
             cursor += 18 + charNameLength;
@@ -66,14 +74,19 @@ public sealed class FieldModelLoaderPC
         }
     }
 
-    public byte[] Save()
+    /// <summary>Serialize the section.</summary>
+    /// <param name="fieldScale">
+    /// Field scale for the header; the C++ writer passes the Section 1 scale. Defaults to
+    /// <see cref="FieldScale"/> (the value that was loaded).
+    /// </param>
+    public byte[] Save(ushort? fieldScale = null)
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Encoding.Latin1, leaveOpen: true);
 
         writer.Write((ushort)0);
         writer.Write(checked((ushort)Models.Count));
-        writer.Write((ushort)0);
+        writer.Write(fieldScale ?? FieldScale);
         foreach (var model in Models)
             WriteModel(writer, model);
 
@@ -132,7 +145,8 @@ public sealed class FieldModelLoaderPC
         writer.Write(characterName);
         writer.Write(model.Unknown);
         WriteFixed(writer, model.HrcName, 8);
-        WriteFixed(writer, model.Scale.ToString("D3"), 4);
+        // QString::number(scale), not zero-padded: "32" must not become "032".
+        WriteFixed(writer, model.Scale.ToString(System.Globalization.CultureInfo.InvariantCulture), 4);
         writer.Write(checked((ushort)model.Animations.Count));
 
         var lightingData = model.LightingData?.ToArray() ?? new byte[30];

@@ -83,6 +83,63 @@ public sealed class Script
 
     public byte[] ToByteArray() => Compile();
 
+    /// <summary>
+    /// Splits raw script bytes into the init part (up to and including the first RET/RETTO that
+    /// is not skipped by a pending forward jump) and the main part, mirroring
+    /// <c>Script::splitScriptAtReturn()</c> in <c>src/core/field/Script.cpp</c>.
+    /// </summary>
+    /// <param name="scriptData">The raw bytes of file script 0.</param>
+    /// <returns>The init and main byte ranges; main is empty when no split point exists.</returns>
+    public static (byte[] Init, byte[] Main) SplitAtReturn(ReadOnlySpan<byte> scriptData)
+    {
+        var pendingTarget = -1;
+        foreach (var opcode in RawOpcodeReader.Read(scriptData))
+        {
+            // C++ inserts a LABEL before the opcode at a jump target; reaching it clears the jump.
+            if (pendingTarget >= 0 && opcode.Offset == pendingTarget)
+                pendingTarget = -1;
+
+            if (pendingTarget >= 0)
+                continue;
+
+            var forwardTarget = ForwardJumpTarget(opcode);
+            if (forwardTarget >= 0)
+            {
+                pendingTarget = forwardTarget;
+            }
+            else if (opcode.Id is 0x00 or 0x07) // RET, RETTO
+            {
+                var split = opcode.Offset + opcode.Size;
+                return (scriptData[..split].ToArray(), scriptData[split..].ToArray());
+            }
+        }
+
+        return (scriptData.ToArray(), []);
+    }
+
+    private static int ForwardJumpTarget(RawOpcode opcode)
+    {
+        var (shift, isLong) = opcode.Id switch
+        {
+            0x10 => (1, false),                 // JMPF
+            0x11 or 0x1B => (1, true),          // JMPFL, Unused1B
+            0x14 => (5, false),                 // IFUB
+            0x15 => (5, true),                  // IFUBL
+            0x16 or 0x18 => (7, false),         // IFSW, IFUW
+            0x17 or 0x19 => (7, true),          // IFSWL, IFUWL
+            0x30 or 0x31 or 0x32 => (3, false), // IFKEY, IFKEYON, IFKEYOFF
+            0xCB or 0xCC => (2, false),         // IFPRTYQ, IFMEMBQ
+            _ => (-1, false),
+        };
+        if (shift < 0)
+            return -1;
+
+        var bytes = opcode.Bytes;
+        int Read(int index) => index < bytes.Length ? bytes[index] : 0;
+        var jump = isLong ? Read(shift) | (Read(shift + 1) << 8) : Read(shift);
+        return opcode.Offset + shift + jump;
+    }
+
     public bool ReplaceRawOpcodeBytes(int offset, byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);
@@ -110,6 +167,7 @@ public sealed class Script
                     "MESSAGE" when opcode.Bytes.Length >= 3 => 2,
                     "MPNAM" when opcode.Bytes.Length >= 2 => 1,
                     "ASK" when opcode.Bytes.Length >= 4 => 3,
+                    "SPECIAL" when IsSpcnm(opcode) => 3,
                     _ => -1,
                 };
                 if (textOffset < 0)
@@ -234,6 +292,7 @@ public sealed class Script
                 "MESSAGE" when opcode.Bytes.Length >= 3 => opcode.Bytes[2],
                 "MPNAM" when opcode.Bytes.Length >= 2 => opcode.Bytes[1],
                 "ASK" when opcode.Bytes.Length >= 4 => opcode.Bytes[3],
+                "SPECIAL" when IsSpcnm(opcode) => opcode.Bytes[3],
                 _ => -1,
             };
             if (textId >= 0)
@@ -253,9 +312,16 @@ public sealed class Script
         return string.Join(", ", _opcodes.Select(o => o.Id.ToString()));
     }
 
+    /// <summary>
+    /// SPECIAL/SPCNM (0x0F 0xFD charID textID) names a character from a text, so it references a
+    /// text id like MESSAGE does (<c>Opcode::textID</c> in the C++).
+    /// </summary>
+    private static bool IsSpcnm(RawOpcode opcode) => opcode.Bytes.Length >= 4 && opcode.Bytes[1] == 0xFD;
+
     private static byte ClampByte(int value) => (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
 
-    private static (ushort Width, ushort Height) EstimateTextWindowSize(string text)
+    /// <summary>Estimate the window size (pixels) needed to show <paramref name="text"/>.</summary>
+    public static (ushort Width, ushort Height) EstimateTextWindowSize(string text)
     {
         var lines = text
             .Replace("{NEW}", "\n", StringComparison.OrdinalIgnoreCase)
@@ -293,7 +359,8 @@ public sealed class Script
         return count;
     }
 
-    private static (short X, short Y) ClampWindowPosition(short x, short y, ushort width, ushort height)
+    /// <summary>Move a window so it stays inside the visible field area.</summary>
+    public static (short X, short Y) ClampWindowPosition(short x, short y, ushort width, ushort height)
     {
         var clampedX = x;
         var clampedY = y;

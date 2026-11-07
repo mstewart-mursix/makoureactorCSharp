@@ -1,0 +1,70 @@
+name: C# port release
+
+# Builds self-contained single-file Windows packages of the C# port (GUI + CLI).
+# Runs on version tags (attaching the zips to a GitHub release) or manually (artifacts only).
+on:
+  push:
+    tags: [ 'csharp-v*' ]
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  package:
+    name: Publish win-x64 packages
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('MakouReactor.CSharp/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Test before packaging
+        run: dotnet test MakouReactor.CSharp/MakouReactor.sln -c Release
+
+      - name: Publish GUI and CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'publish'
+          $common = @('-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
+                      '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:DebugType=None')
+          dotnet publish MakouReactor.CSharp/src/MakouReactor.UI.WPF/MakouReactor.UI.WPF.csproj @common -o "$root/makoureactor-gui-win64"
+          if ($LASTEXITCODE -ne 0) { throw 'GUI publish failed' }
+          dotnet publish MakouReactor.CSharp/src/MakouReactor.CLI/MakouReactor.CLI.csproj @common -o "$root/makoureactor-cli-win64"
+          if ($LASTEXITCODE -ne 0) { throw 'CLI publish failed' }
+
+          foreach ($pkg in 'makoureactor-gui-win64', 'makoureactor-cli-win64') {
+            Copy-Item MakouReactor.CSharp/config/*.template.json "$root/$pkg/"
+            # Never ship game data.
+            $bad = Get-ChildItem "$root/$pkg" -Recurse -Include *.lgp, *.DAT, *.lzs, *.dec, *.iso, *.img
+            if ($bad) { throw "Package $pkg contains possible game data: $($bad.FullName -join ', ')" }
+            Compress-Archive -Path "$root/$pkg/*" -DestinationPath "$root/$pkg.zip"
+          }
+          if (-not (Test-Path "$root/makoureactor-gui-win64/MakouReactor.UI.WPF.exe")) { throw 'GUI exe missing' }
+          if (-not (Test-Path "$root/makoureactor-cli-win64/MakouReactor.CLI.exe")) { throw 'CLI exe missing' }
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: makoureactor-csharp-win64
+          path: publish/*.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: publish/*.zip
+          prerelease: true
