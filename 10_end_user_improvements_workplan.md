@@ -294,7 +294,7 @@ The "never corrupt flevel data" promise, made visible.
   script/opcode counts, text entries to be added, warnings (unknown items/tracks,
   out-of-walkmesh placements). Apply button stays disabled while validation has errors.
 - **Safe apply pipeline** in a new `MakouReactor.Core/IO/SafeArchiveWriter.cs`:
-  1. Copy `flevel.lgp` → `flevel.lgp.mr-backup-yyyyMMdd-HHmmss` (keep newest 5, prune rest).
+  1. Copy `flevel.lgp` → `flevel.lgp.mr-backup-yyyyMMdd-HHmmss` (keep newest 5 plus the oldest, prune rest).
   2. Write the modified archive to `flevel.lgp.tmp`, verify it re-opens and the modified
      field parses, then atomically replace (`File.Replace`).
   3. On any exception: delete tmp, original untouched, surface the error.
@@ -303,7 +303,7 @@ The "never corrupt flevel data" promise, made visible.
 - CLI: `apply --archive <flevel.lgp> --field <name> --plan <plan.json> [--dry-run]` using
   the same pipeline; `--dry-run` prints the diff summary.
 - Tests: synthetic archive apply → backup exists, content updated, re-openable; failure
-  injected mid-write → original bytes untouched; prune keeps 5.
+  injected mid-write → original bytes untouched; prune keeps 5 plus the original.
 
 ## Phase 6 — Walkmesh generation and editing
 

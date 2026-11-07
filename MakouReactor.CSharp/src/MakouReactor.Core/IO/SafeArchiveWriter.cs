@@ -33,10 +33,11 @@ public sealed class SafeApplyResult
 /// <item>write the change into <c>&lt;archive&gt;.tmp</c>, re-open it and verify the field reads
 /// back byte-identical;</item>
 /// <item>atomically replace the original, then prune old backups (newest
-/// <see cref="BackupsToKeep"/> kept).</item>
+/// <see cref="BackupsToKeep"/> kept, plus the oldest one, which is normally the untouched
+/// original archive).</item>
 /// </list>
-/// On any failure the temporary file and the just-made backup are removed and the original
-/// archive bytes are unchanged.
+/// On any failure the temporary files and the just-made backup are removed, the original
+/// archive bytes are unchanged and the field stays marked modified.
 /// </summary>
 public sealed class SafeArchiveWriter
 {
@@ -68,7 +69,10 @@ public sealed class SafeArchiveWriter
     /// <summary>Full path of the archive being protected.</summary>
     public string ArchivePath { get; }
 
-    /// <summary>Number of newest backups retained after each successful apply.</summary>
+    /// <summary>
+    /// Number of newest backups retained after each successful apply (the oldest backup is
+    /// always kept in addition).
+    /// </summary>
     public int BackupsToKeep { get; }
 
     /// <summary>Path of the staging file the modified archive is written to.</summary>
@@ -93,16 +97,19 @@ public sealed class SafeArchiveWriter
         {
             backup = CreateBackup();
 
-            // Capture the expected bytes first: SaveField marks the field saved.
             var expected = field.SaveDecompressed();
+            var compressed = field.SaveCompressed();
 
+            // Stage through LgpArchive directly: FieldArchive.SaveField would mark the field saved
+            // before the staged copy is verified, losing the dirty flag if verification fails.
             File.Copy(ArchivePath, TempPath, overwrite: true);
-            FieldArchive.Open(TempPath).SaveField(field);
+            LgpArchive.Open(TempPath).WriteFile(field.Name, compressed);
 
             VerifyStagedField(field.Name, expected);
             BeforeReplace?.Invoke(TempPath);
 
             ReplaceAtomically(TempPath, ArchivePath);
+            field.SetSaved();
             var pruned = PruneBackups();
             return new SafeApplyResult { Ok = true, Backup = backup, PrunedBackups = pruned };
         }
@@ -116,6 +123,9 @@ public sealed class SafeArchiveWriter
         finally
         {
             TryDelete(TempPath);
+            // LgpArchive.WriteFile keeps a ".bak" of the file it replaces; for the staging copy
+            // that is a second full-size archive nobody needs.
+            TryDelete(TempPath + ".bak");
         }
     }
 
@@ -185,8 +195,14 @@ public sealed class SafeArchiveWriter
     private IReadOnlyList<string> PruneBackups()
     {
         var pruned = new List<string>();
-        foreach (var old in ListBackups().Skip(BackupsToKeep))
+        var backups = ListBackups();
+        var oldest = backups.Count > 0 ? backups[^1] : null;
+        foreach (var old in backups.Skip(BackupsToKeep))
         {
+            // Never prune the oldest backup: after the first apply it is the pristine archive.
+            if (ReferenceEquals(old, oldest))
+                continue;
+
             if (TryDelete(old.Path))
                 pruned.Add(old.Path);
         }

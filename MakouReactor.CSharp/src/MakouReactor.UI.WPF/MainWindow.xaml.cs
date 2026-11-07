@@ -685,7 +685,7 @@ public partial class MainWindow : Window
                 RefreshArchiveViews();
             UpdateDirtyState();
             StatusLabel.Text = backupPath != null
-                ? $"Saved {fieldName}. Backup: {Path.GetFileName(backupPath)} (newest {SafeArchiveWriter.DefaultBackupsToKeep} kept)."
+                ? $"Saved {fieldName}. Backup: {Path.GetFileName(backupPath)} (newest {SafeArchiveWriter.DefaultBackupsToKeep} and the original kept)."
                 : _archive == null || _archive.IsLooseDirectory
                     ? $"Saved {fieldName}."
                     : $"Saved {fieldName}. Backup written beside the archive.";

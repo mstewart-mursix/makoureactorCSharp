@@ -90,8 +90,9 @@ public sealed class SafeArchiveWriterTests : IDisposable
     }
 
     [Fact]
-    public void prune_keeps_newest_five()
+    public void prune_keeps_newest_five_and_the_pristine_original()
     {
+        var originalBytes = File.ReadAllBytes(_archive);
         var writer = Writer();
         for (var i = 0; i < 7; i++)
         {
@@ -100,9 +101,35 @@ public sealed class SafeArchiveWriterTests : IDisposable
         }
 
         var backups = writer.ListBackups();
-        backups.Should().HaveCount(5);
+        backups.Should().HaveCount(6);
         backups[0].CreatedAt.Should().Be(new DateTime(2026, 10, 31, 9, 7, 0));
-        backups[^1].CreatedAt.Should().Be(new DateTime(2026, 10, 31, 9, 3, 0));
+        backups[4].CreatedAt.Should().Be(new DateTime(2026, 10, 31, 9, 3, 0));
+        backups[^1].CreatedAt.Should().Be(new DateTime(2026, 10, 31, 9, 1, 0));
+        File.ReadAllBytes(backups[^1].Path).Should().Equal(originalBytes, "the first backup is never pruned");
+    }
+
+    [Fact]
+    public void apply_leaves_no_staging_files_behind()
+    {
+        Writer().ApplyField(ModifiedField()).Ok.Should().BeTrue();
+
+        Directory.GetFiles(_dir).Select(Path.GetFileName).Should().BeEquivalentTo(
+            new[] { "flevel.lgp", "flevel.lgp.mr-backup-20261031-090000" });
+    }
+
+    [Fact]
+    public void apply_marks_the_field_saved_only_on_success()
+    {
+        var failing = Writer();
+        failing.BeforeReplace = _ => throw new IOException("disk full (simulated)");
+        var field = ModifiedField();
+
+        failing.ApplyField(field).Ok.Should().BeFalse();
+        field.IsModified.Should().BeTrue("the edit was not written, so it must stay dirty");
+
+        Writer().ApplyField(field).Ok.Should().BeTrue();
+        field.IsModified.Should().BeFalse();
+        LastText(FieldArchive.Open(_archive).OpenField("testmap")).Should().Be("Hello from the plan");
     }
 
     [Fact]
