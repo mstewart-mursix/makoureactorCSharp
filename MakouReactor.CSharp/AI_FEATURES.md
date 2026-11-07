@@ -34,6 +34,13 @@ Apply emits real field opcodes (`SceneScriptEmitter`): a director group plus one
 group per zone event. Dialogue is appended to the Section 1 text table. The preview lists every group,
 script and opcode count before anything changes.
 
+**Models.** A character's `CHAR` id is its rank among the field's model groups, and the field's Model
+Loader holds one entry per model group. Each new actor therefore gets a Model Loader entry copied from a
+model the field already loads: the one named by `actors[].model` (the field context lists the reusable
+groups), otherwise the field's first NPC model. Party members the field already has as playable
+characters (`cloud`, `barret`, ...) are not duplicated: their dialogue uses the existing entity, and
+`move`/`face` steps for them are skipped with a warning.
+
 Walkmesh regions proposed by the plan are written only with walkmesh mode **Merge** or **Replace**
 (default **Ignore**). Scripts are emitted against the walkmesh the field will have afterwards. Replace
 drops the existing triangles, so existing gateways, triggers and entity positions may no longer line up;
@@ -66,5 +73,4 @@ doctor
 ## Known limits
 
 * Plan coordinates are 2D; generated walkmeshes are flat (one Z for the whole mesh).
-* New actors need matching Model Loader entries.
 * Nothing here has been run in the game engine yet - test on a copy of `flevel.lgp`.

@@ -91,6 +91,7 @@ public static class ScenePlanMapper
             Groups = emission.Groups,
             TextsAdded = emission.Texts,
             OpcodeCounts = emission.OpcodeCounts,
+            ModelsAdded = emission.NewModels,
             Warnings = emission.Warnings,
             Notes = notes,
             Summary = summary,
@@ -229,6 +230,11 @@ public static class ScenePlanMapper
         foreach (var group in emission.GrpScripts)
             section.InsertGrpScript(section.GrpScriptCount, group);
 
+        // One Model Loader entry per new model group, appended in the same order, so each CHAR
+        // (the group's rank among model groups) finds its model.
+        if (emission.NewModels.Count > 0 && field.ModelLoader != null)
+            field.ModelLoader.Models.AddRange(emission.NewModels);
+
         section.MarkModified();
         field.SetModified();
     }
@@ -263,6 +269,12 @@ public static class ScenePlanMapper
             sb.Append(nl);
         }
 
+        if (emission.NewModels.Count > 0)
+        {
+            sb.Append($"{(previewOnly ? "Would add" : "Added")} {emission.NewModels.Count} Model Loader entr{(emission.NewModels.Count == 1 ? "y" : "ies")} " +
+                      $"(copies of models the field already loads): {string.Join(", ", emission.NewModels.Select(static m => $"#{m.Id} {m.HrcName}"))}{nl}");
+        }
+
         if (emission.Texts.Count == 0)
         {
             sb.Append($"No dialogue text was added.{nl}");
@@ -280,7 +292,7 @@ public static class ScenePlanMapper
 
         if (emission.Notes.Count > 0)
         {
-            sb.Append($"Notes (custom_note, no opcode emitted):{nl}");
+            sb.Append($"Notes:{nl}");
             foreach (var note in emission.Notes)
                 sb.Append($" - {note}{nl}");
         }

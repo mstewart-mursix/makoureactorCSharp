@@ -151,6 +151,12 @@ public sealed class ApplyResult
     /// <summary>Texts appended to the field's text table.</summary>
     public IReadOnlyList<AppliedText> TextsAdded { get; init; } = Array.Empty<AppliedText>();
 
+    /// <summary>
+    /// Model Loader entries appended for new actors (copies of models the field already loads),
+    /// in model id order.
+    /// </summary>
+    public IReadOnlyList<FieldModelInfoPC> ModelsAdded { get; init; } = Array.Empty<FieldModelInfoPC>();
+
     /// <summary>Emitted opcode counts by opcode name, over all groups.</summary>
     public IReadOnlyDictionary<string, int> OpcodeCounts { get; init; } = new Dictionary<string, int>();
 
