@@ -196,6 +196,16 @@ public sealed class LayoutOptions
     public bool ConstrainToWalkmesh { get; init; } = true;
     public int NudgeStepPx { get; init; } = 8;
     public int MaxNudgeTries { get; init; } = 200;
+
+    /// <summary>
+    /// Keep actors off the field's traffic: the paths its existing characters walk in their scripts,
+    /// its trigger lines and exits, and anywhere an actor would cut one of those off from another.
+    /// New actors are solid, so one standing in a walkway stops scripted scenes and the player.
+    /// </summary>
+    public bool KeepTrafficClear { get; init; } = true;
+
+    /// <summary>Distance (field units) kept between an actor and the field's traffic.</summary>
+    public int TrafficClearance { get; init; } = 64;
 }
 
 /// <summary>

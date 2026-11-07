@@ -46,6 +46,7 @@ public static class FieldContextBuilder
             $"Field: {field.Name}",
             DescribeWalkmesh(field.Walkmesh),
             DescribeGroups(field.ScriptsAndTexts),
+            DescribeTraffic(field),
             DescribeExits(field.Inf),
             DescribeDialog(field.ScriptsAndTexts),
         };
@@ -149,6 +150,36 @@ public static class FieldContextBuilder
         8 => "Cid",
         _ => $"character {charId}",
     };
+
+    /// <summary>Cap on listed paths so the section stays short.</summary>
+    public const int MaxListedPaths = 12;
+
+    private static string DescribeTraffic(Field field)
+    {
+        var walkmesh = LayoutGenerator.WalkmeshOf(field);
+        if (walkmesh == null || field.ScriptsAndTexts == null)
+            return string.Empty;
+
+        // Paths existing characters walk (moves only; exits are listed separately). Standing spots
+        // are already covered by the group list, so only real moves are shown.
+        var exits = field.Inf?.ExitLines
+            .Select(static e => (new Point(e.LineA.X, e.LineA.Y), new Point(e.LineB.X, e.LineB.Y)))
+            .ToHashSet() ?? [];
+        var moves = FieldTraffic.Of(field, walkmesh).Segments
+            .Where(s => (s.A.X != s.B.X || s.A.Y != s.B.Y) && !exits.Contains(s))
+            .Distinct()
+            .ToList();
+        if (moves.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder(
+            $"Paths existing characters walk in scripted scenes (keep actors at least {FieldTraffic.DefaultClearance} units away, or they block the scene):\n");
+        foreach (var (a, b) in moves.Take(MaxListedPaths))
+            sb.Append(CultureInfo.InvariantCulture, $"- ({a.X},{a.Y}) -> ({b.X},{b.Y})\n");
+        if (moves.Count > MaxListedPaths)
+            sb.Append(CultureInfo.InvariantCulture, $"- ...and {moves.Count - MaxListedPaths} more\n");
+        return sb.ToString().TrimEnd();
+    }
 
     private static string DescribeExits(InfFile? inf)
     {

@@ -7,8 +7,12 @@ using Xunit;
 
 namespace MakouReactor.Tests.Integration;
 
-public sealed class FLevelIntegrationTests
+// Opening the real archive loads the game font process-wide, so run apart from parallel tests.
+[Collection(MakouReactor.Tests.Text.GlobalFontCollection.Name)]
+public sealed class FLevelIntegrationTests : IDisposable
 {
+    public void Dispose() => MakouReactor.Core.Text.FF7TextMetrics.UseBuiltInFont();
+
     [Fact]
     public void mr_test_flevel_opens_archive_and_first_field_when_configured()
     {
@@ -119,6 +123,51 @@ public sealed class FLevelIntegrationTests
             }
         }
 
+        problems.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void mr_test_flevel_layout_keeps_new_actors_out_of_every_fields_traffic_when_configured()
+    {
+        var archivePath = TestArchivePath();
+        if (archivePath == null)
+            return;
+
+        var archive = FieldArchive.Open(archivePath);
+        var problems = new List<string>();
+        int fields = 0, moved = 0, nonSolid = 0;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        foreach (var entry in archive.FieldEntries)
+        {
+            var field = archive.OpenField(entry.Name);
+            var walkmesh = MakouReactor.AI.Layout.LayoutGenerator.WalkmeshOf(field);
+            if (walkmesh == null || field.ScriptsAndTexts == null)
+                continue;
+
+            fields++;
+            var centre = MakouReactor.AI.Layout.WalkmeshGeometry.Centroid(walkmesh)!.Value;
+            var plan = new ScenePlan();
+            for (var i = 0; i < 3; i++)
+                plan.Actors.Add(new Actor($"npc{i}", "Npc", x: centre.X, y: centre.Y));
+
+            var layout = MakouReactor.AI.Layout.LayoutGenerator.Adjust(plan, field);
+            moved += layout.Notes.Count(n => n.Contains("scripted paths, triggers and exits clear"));
+            var blocked = layout.Notes.Count(n => n.Contains("non-solid"));
+            nonSolid += blocked;
+
+            var traffic = MakouReactor.AI.Layout.FieldTraffic.Of(field, walkmesh);
+            var placed = new List<Point>();
+            foreach (var actor in plan.Actors)
+            {
+                if (!MakouReactor.AI.Layout.WalkmeshGeometry.Contains(walkmesh, actor.Position))
+                    problems.Add($"{entry.Name}: {actor.Id} off the walkmesh at {actor.Position}");
+                if (!traffic.IsClear(actor.Position, placed) && blocked == 0)
+                    problems.Add($"{entry.Name}: {actor.Id} at {actor.Position} is in the way and was not flagged");
+                placed.Add(actor.Position);
+            }
+        }
+
+        Console.WriteLine($"layout over {fields} fields: {moved} actor(s) moved off traffic, {nonSolid} with no clear spot, {clock.ElapsedMilliseconds} ms");
         problems.Should().BeEmpty();
     }
 

@@ -15,6 +15,12 @@ See `10_end_user_improvements_workplan.md` (repo root) for the per-phase status.
 * **Layout** (`LayoutGenerator`): actors, props and the spawn point that fall off the walkmesh are moved
   onto the nearest walkable point; overlaps are nudged apart on walkable ground. When the plan proposes
   its own walkmesh (schema 1.1, `layout.walkmesh.regions`), placement uses that instead.
+* **Traffic** (`FieldTraffic`): new actors are solid, so they and their `move` targets are kept 64 units
+  from the paths the field's own characters walk in their scripts (XYZI start, MOVE/FMOVE/CMOVE targets),
+  its LINE triggers and exits, and never where they would cut one of those off from another. Found in
+  game on `md1stin`, where two generated guards in the walkway stopped the opening scene. An actor with
+  no clear spot is emitted with `SOLID` off so it cannot block anything. The field context lists these
+  paths for the model.
 * **Validation** (`ScenePlanValidator`): errors block apply. Off-mesh placements and invalid walkmesh
   regions are errors, so they feed the repair loop.
 * **Self-repair**: unparseable output or validation errors are sent back to the model with the exact
@@ -33,6 +39,10 @@ Apply emits real field opcodes (`SceneScriptEmitter`): a director group plus one
 (CHAR, XYZI, DIR, talk script), `say` as WINDOW + MESSAGE, WAIT, MUSIC, flags, STITM, BATTLE, and a LINE
 group per zone event. Dialogue is appended to the Section 1 text table. The preview lists every group,
 script and opcode count before anything changes.
+
+**Dialog windows** are sized like the C++ editor: with the game's own font widths from `WINDOW.BIN`
+(found next to the field archive, `data/kernel` or `data/lang-*/kernel`), falling back to the built-in
+table, which is narrower than the PC font for `!`, `?` and a few accented letters.
 
 **Models.** A character's `CHAR` id is its rank among the field's model groups, and the field's Model
 Loader holds one entry per model group. Each new actor therefore gets a Model Loader entry copied from a
@@ -73,4 +83,6 @@ doctor
 ## Known limits
 
 * Plan coordinates are 2D; generated walkmeshes are flat (one Z for the whole mesh).
-* Nothing here has been run in the game engine yet - test on a copy of `flevel.lgp`.
+* `on_enter` scenes start as soon as the field loads, which on fields that open with a movie
+  (such as `md1stin`) is while the movie plays.
+* Verified in game (Steam + FFNx) on `md1stin` only; keep testing on a copy of `flevel.lgp`.

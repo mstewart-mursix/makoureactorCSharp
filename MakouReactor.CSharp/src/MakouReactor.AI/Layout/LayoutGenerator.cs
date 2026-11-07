@@ -118,7 +118,10 @@ public static class LayoutGenerator
             }
         }
 
-        // --- Adjust actors: clamp -> optional walkmesh snap -> avoid overlaps ---
+        // --- Adjust actors: clamp -> optional walkmesh snap -> avoid overlaps -> keep traffic clear ---
+        var traffic = (opts?.KeepTrafficClear ?? true) && walkmesh != null && field != null
+            ? FieldTraffic.Of(field, walkmesh, opts?.TrafficClearance ?? FieldTraffic.DefaultClearance)
+            : null;
         var placed = new List<Point>(plan.Actors?.Count ?? 0);
         var actors = plan.Actors ?? new List<Actor>();
 
@@ -160,11 +163,65 @@ public static class LayoutGenerator
             if (freePos != pos)
                 notes.Add($"Nudged actor '{actor.Id}' from {pos.X},{pos.Y} to {freePos.X},{freePos.Y} to avoid overlaps");
 
+            // A new actor is solid: keep it out of the paths the field's own characters walk, its
+            // triggers and exits, and anywhere it would wall one of them off.
+            if (traffic is { IsEmpty: false } && !traffic.IsClear(freePos, placed))
+            {
+                if (traffic.FindClear(freePos, placed, minDistancePx) is { } clear)
+                {
+                    notes.Add($"Moved actor '{actor.Id}' from {freePos.X},{freePos.Y} to {clear.X},{clear.Y} to keep the field's " +
+                              "scripted paths, triggers and exits clear");
+                    freePos = clear;
+                }
+                else
+                {
+                    notes.Add($"Actor '{actor.Id}' at {freePos.X},{freePos.Y} is in the way of the field's scripted paths, triggers " +
+                              "or exits and there is no clear spot; it will be made non-solid");
+                }
+            }
+
             actor.Position = freePos;
             placed.Add(freePos);
         }
 
+        // --- Where actors walk to matters as much as where they start ---
+        if (traffic is { IsEmpty: false })
+        {
+            var actorIds = new HashSet<string>(actors.Select(static a => a.Id), StringComparer.Ordinal);
+            foreach (var step in plan.Events.SelectMany(static e => AllSteps(e.Steps)))
+            {
+                if (step.Type != EventStepType.Move || !actorIds.Contains(step.ActorId))
+                    continue;
+
+                var others = placed.Where((_, i) => actors[i].Id != step.ActorId).ToList();
+                if (traffic.IsClear(step.To, others))
+                    continue;
+
+                if (traffic.FindClear(step.To, others, minDistancePx) is { } clear)
+                {
+                    notes.Add($"Moved the move target of '{step.ActorId}' from {step.To.X},{step.To.Y} to {clear.X},{clear.Y} " +
+                              "to keep the field's scripted paths, triggers and exits clear");
+                    step.To = clear;
+                }
+                else
+                {
+                    notes.Add($"The move target {step.To.X},{step.To.Y} of '{step.ActorId}' is in the way of the field's scripted " +
+                              "paths, triggers or exits and there is no clear spot; the actor will be made non-solid");
+                }
+            }
+        }
+
         return new LayoutResult { Ok = true, Notes = notes };
+    }
+
+    private static IEnumerable<EventStep> AllSteps(IEnumerable<EventStep> steps)
+    {
+        foreach (var step in steps)
+        {
+            yield return step;
+            foreach (var nested in AllSteps(step.ThenSteps).Concat(AllSteps(step.ElseSteps)))
+                yield return nested;
+        }
     }
 
     // -----------------------------------------------------------------------

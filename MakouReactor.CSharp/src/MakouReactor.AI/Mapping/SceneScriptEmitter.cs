@@ -114,6 +114,8 @@ internal sealed class SceneScriptEmitter
     private readonly Dictionary<string, (int X, int Y, int Z)> _actorNow = new(StringComparer.Ordinal);
     private readonly int _modelLoaderCount;
     private readonly FieldModelLoaderPC? _modelLoader;
+    private readonly FieldTraffic _traffic;
+    private readonly List<Point> _placedActors = [];
     private readonly SceneEmission _out;
     private readonly HashSet<string> _usedNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ActorGroup> _actors = new(StringComparer.Ordinal);
@@ -140,6 +142,7 @@ internal sealed class SceneScriptEmitter
         _camera = field.Camera is { HasCamera: true } ca ? ca.Cameras[0] : null;
         _modelLoaderCount = field.ModelLoader?.ModelCount ?? 0;
         _modelLoader = field.ModelLoader;
+        _traffic = FieldTraffic.Of(field, _walkmesh);
         _out = new SceneEmission { DirectorName = directorName };
     }
 
@@ -398,6 +401,26 @@ internal sealed class SceneScriptEmitter
             _actorStart.TryAdd(actor.Id, (x, y, z));
             if (actor.Facing.HasValue)
                 group.Init.Dir(DirectionByte(actor.Facing.Value));
+
+            // Layout keeps actors out of the field's traffic when it can; one still in the way (no
+            // clear spot, or a plan applied without layout) must not block scripted scenes or the player.
+            var at = new Point(x, y);
+            if (_walkmesh != null && !_traffic.IsEmpty)
+            {
+                var blockingAt = new[] { at }
+                    .Concat(FlattenSteps(_plan.Events.SelectMany(static e => e.Steps))
+                        .Where(s => s.Type == EventStepType.Move && s.ActorId == actor.Id)
+                        .Select(static s => s.To))
+                    .FirstOrDefault(p => !_traffic.IsClear(p, _placedActors), new Point(int.MinValue, int.MinValue));
+                if (blockingAt.X != int.MinValue)
+                {
+                    group.Init.Solid(false);
+                    Warn($"actor '{actor.Id}' {(blockingAt.Equals(at) ? "stands" : $"walks to {blockingAt.X},{blockingAt.Y}, which is")} in the way of " +
+                         "the field's scripted paths, triggers or exits; it is made non-solid so it cannot block them.");
+                }
+            }
+
+            _placedActors.Add(at);
             group.Init.Ret();
 
             index++;

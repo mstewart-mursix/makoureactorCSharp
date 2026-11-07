@@ -59,6 +59,11 @@ public sealed class ScriptBuilder
     public const byte MOVE = 0xA8;
     /// <summary><c>DIR</c>, Opcode.h line 181 (0xB3); {banks, direction}; length 3 (line 5490).</summary>
     public const byte DIR = 0xB3;
+    /// <summary>
+    /// <c>SOLID</c>, Opcode.h line 187 (0xC7); <c>OpcodeDisable</c> {disabled}; length 2. The shipped
+    /// fields use <c>C7 01</c> for entities other characters walk through.
+    /// </summary>
+    public const byte SOLID = 0xC7;
     /// <summary><c>MUSIC</c>, Opcode.h line 201 (0xF0); <c>OpcodeMusic</c> {musicID}; length 2 (line 5555).</summary>
     public const byte MUSIC = 0xF0;
 
@@ -174,6 +179,9 @@ public sealed class ScriptBuilder
 
     /// <summary>Emits <c>DIR</c> with a constant direction (banks = 0).</summary>
     public ScriptBuilder Dir(byte direction) => Raw(DIR, 0x00, direction);
+
+    /// <summary>Emits <c>SOLID</c>: whether other characters collide with this entity.</summary>
+    public ScriptBuilder Solid(bool solid) => Raw(SOLID, solid ? (byte)0 : (byte)1);
 
     /// <summary>Emits <c>MUSIC</c> (field music list index).</summary>
     public ScriptBuilder Music(byte musicId) => Raw(MUSIC, musicId);
