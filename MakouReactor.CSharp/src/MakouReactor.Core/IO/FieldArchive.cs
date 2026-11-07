@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 
 using MakouReactor.Core.Models;
+using MakouReactor.Core.Text;
 
 namespace MakouReactor.Core.IO;
 
@@ -97,7 +98,12 @@ public sealed class FieldArchive
         if (!File.Exists(archivePath))
             throw new FileNotFoundException($"Archive not found: {archivePath}", archivePath);
 
-        return new FieldArchive(archivePath, FieldArchivePlatform.PC, LgpArchive.Open(archivePath, cancellationToken));
+        var archive = new FieldArchive(archivePath, FieldArchivePlatform.PC, LgpArchive.Open(archivePath, cancellationToken));
+
+        // Size dialog windows with the font the game will draw them in (data/[lang-*/]kernel/WINDOW.BIN),
+        // as the C++ editor does once it finds window.bin. Without it the built-in table stays in use.
+        WindowBinFont.TryLoadFor(archivePath);
+        return archive;
     }
 
     /// <summary>

@@ -12,6 +12,12 @@ public sealed class Actor
     public Point Position { get; set; }
     public char? Facing { get; set; }
 
+    /// <summary>
+    /// Name of an existing model group in the field whose 3D model this actor reuses (the field's
+    /// Model Loader entry is copied). Null lets the mapper pick one.
+    /// </summary>
+    public string? Model { get; set; }
+
     public Actor() { }
 
     public Actor(string id, string displayName, string pose = "idle", int x = 0, int y = 0, char? facing = null)

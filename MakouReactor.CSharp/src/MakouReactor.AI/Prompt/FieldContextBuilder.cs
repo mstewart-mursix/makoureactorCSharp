@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 
 using MakouReactor.AI.Layout;
+using MakouReactor.AI.Mapping;
 using MakouReactor.Core.Models;
 
 namespace MakouReactor.AI.Prompt;
@@ -45,6 +46,7 @@ public static class FieldContextBuilder
             $"Field: {field.Name}",
             DescribeWalkmesh(field.Walkmesh),
             DescribeGroups(field.ScriptsAndTexts),
+            DescribeTraffic(field),
             DescribeExits(field.Inf),
             DescribeDialog(field.ScriptsAndTexts),
         };
@@ -117,12 +119,66 @@ public static class FieldContextBuilder
         if (scripts == null || scripts.GrpScriptCount == 0)
             return string.Empty;
 
+        var models = FieldModels.Of(scripts);
+        var byIndex = models.Groups.ToDictionary(static g => g.GroupIndex);
         var sb = new StringBuilder("Existing groups (do not reuse these names):\n");
         var names = scripts.GrpScripts
-            .Select(g => g.Type == GrpScriptType.Model ? $"{g.Name} (character/NPC)" : g.Name)
+            .Select((g, index) => !byIndex.TryGetValue(index, out var model)
+                ? g.Name
+                : model.PartyCharId is { } charId
+                    ? $"{g.Name} (playable: {PartyName(charId)})"
+                    : $"{g.Name} (character/NPC)")
             .Where(n => !string.IsNullOrWhiteSpace(n));
         sb.Append("- ").Append(string.Join(", ", names));
+
+        var reusable = models.Groups.Where(static g => g.PartyCharId == null).Select(static g => g.Name).ToList();
+        if (reusable.Count > 0)
+            sb.Append("\nModels new actors can reuse (actors[].model): ").Append(string.Join(", ", reusable));
         return sb.ToString();
+    }
+
+    private static string PartyName(byte charId) => charId switch
+    {
+        0 => "Cloud",
+        1 => "Barret",
+        2 => "Tifa",
+        3 => "Aeris",
+        4 => "Red XIII",
+        5 => "Yuffie",
+        6 => "Cait Sith",
+        7 => "Vincent",
+        8 => "Cid",
+        _ => $"character {charId}",
+    };
+
+    /// <summary>Cap on listed paths so the section stays short.</summary>
+    public const int MaxListedPaths = 12;
+
+    private static string DescribeTraffic(Field field)
+    {
+        var walkmesh = LayoutGenerator.WalkmeshOf(field);
+        if (walkmesh == null || field.ScriptsAndTexts == null)
+            return string.Empty;
+
+        // Paths existing characters walk (moves only; exits are listed separately). Standing spots
+        // are already covered by the group list, so only real moves are shown.
+        var exits = field.Inf?.ExitLines
+            .Select(static e => (new Point(e.LineA.X, e.LineA.Y), new Point(e.LineB.X, e.LineB.Y)))
+            .ToHashSet() ?? [];
+        var moves = FieldTraffic.Of(field, walkmesh).Segments
+            .Where(s => (s.A.X != s.B.X || s.A.Y != s.B.Y) && !exits.Contains(s))
+            .Distinct()
+            .ToList();
+        if (moves.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder(
+            $"Paths existing characters walk in scripted scenes (keep actors at least {FieldTraffic.DefaultClearance} units away, or they block the scene):\n");
+        foreach (var (a, b) in moves.Take(MaxListedPaths))
+            sb.Append(CultureInfo.InvariantCulture, $"- ({a.X},{a.Y}) -> ({b.X},{b.Y})\n");
+        if (moves.Count > MaxListedPaths)
+            sb.Append(CultureInfo.InvariantCulture, $"- ...and {moves.Count - MaxListedPaths} more\n");
+        return sb.ToString().TrimEnd();
     }
 
     private static string DescribeExits(InfFile? inf)

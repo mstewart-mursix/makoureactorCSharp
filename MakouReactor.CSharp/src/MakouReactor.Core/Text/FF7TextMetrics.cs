@@ -6,8 +6,9 @@ namespace MakouReactor.Core.Text;
 
 /// <summary>
 /// FF7 dialog-window metrics for international (non-Japanese) field text, ported from
-/// <c>FF7Font::calcSize</c> in <c>src/core/FF7Font.cpp</c> with the built-in width table
-/// (the C++ app can also read <c>window.bin</c>; this port uses the embedded defaults).
+/// <c>FF7Font::calcSize</c> in <c>src/core/FF7Font.cpp</c>. Like the C++ app, widths come from the
+/// game's <c>WINDOW.BIN</c> once one is loaded (<see cref="UseGameFont"/>, <see cref="WindowBinFont"/>;
+/// opening a PC field archive does this automatically) and from the built-in table otherwise.
 /// Inputs are raw FF7 text bytes (see the ff7tk <c>FF7Text</c> table: <c>0x00</c> = space,
 /// <c>0xE7</c> = newline, <c>0xFF</c> = terminator).
 /// </summary>
@@ -68,12 +69,37 @@ public static class FF7TextMetrics
         [0xA9, 0x02],
     ];
 
-    private static readonly int BiggestCharWidth = CharFullWidth(0x37); // 'W'
+    // Swapped atomically by UseGameFont; null means the built-in table.
+    private static volatile byte[]? _gameFont;
+
+    private static int BiggestCharWidth => CharFullWidth(0x37); // 'W'
+
+    /// <summary>True when widths come from the game's WINDOW.BIN (see <see cref="WindowBinFont"/>).</summary>
+    public static bool UsesGameFont => _gameFont != null;
+
+    /// <summary>
+    /// Use the game's own width table (256 bytes, from <see cref="WindowBinFont.TryParse"/>) for every
+    /// later measurement, like the C++ editor does once it has loaded <c>window.bin</c>.
+    /// </summary>
+    public static void UseGameFont(byte[] widthTable)
+    {
+        ArgumentNullException.ThrowIfNull(widthTable);
+        if (widthTable.Length != CharWidthTable.Length)
+            throw new ArgumentException($"A width table has {CharWidthTable.Length} entries.", nameof(widthTable));
+
+        // Control and multi-byte codes (0xE0 and up) are measured by CalcUncappedSize, not looked up.
+        var table = (byte[])widthTable.Clone();
+        Array.Copy(CharWidthTable, 0xE0, table, 0xE0, CharWidthTable.Length - 0xE0);
+        _gameFont = table;
+    }
+
+    /// <summary>Go back to the built-in width table.</summary>
+    public static void UseBuiltInFont() => _gameFont = null;
 
     /// <summary>Full advance (glyph width + left padding) of an international character byte, in pixels.</summary>
     public static int CharFullWidth(byte c)
     {
-        var w = CharWidthTable[c];
+        var w = (_gameFont ?? CharWidthTable)[c];
         return (w & 0x1F) + (w >> 5);
     }
 

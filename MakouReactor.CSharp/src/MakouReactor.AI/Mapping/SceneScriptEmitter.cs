@@ -25,6 +25,12 @@ internal sealed class SceneEmission
     public Dictionary<string, int> OpcodeCounts { get; } = new(StringComparer.Ordinal);
     public List<string> Warnings { get; } = [];
     public List<string> Notes { get; } = [];
+
+    /// <summary>
+    /// Model Loader entries to append, one per new actor group in group order (each a copy of an
+    /// existing entry, so the field only loads models it already uses).
+    /// </summary>
+    public List<FieldModelInfoPC> NewModels { get; } = [];
 }
 
 /// <summary>
@@ -107,9 +113,15 @@ internal sealed class SceneScriptEmitter
     private readonly Dictionary<string, (int X, int Y, int Z)> _actorStart = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (int X, int Y, int Z)> _actorNow = new(StringComparer.Ordinal);
     private readonly int _modelLoaderCount;
+    private readonly FieldModelLoaderPC? _modelLoader;
+    private readonly FieldTraffic _traffic;
+    private readonly List<Point> _placedActors = [];
     private readonly SceneEmission _out;
     private readonly HashSet<string> _usedNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ActorGroup> _actors = new(StringComparer.Ordinal);
+
+    /// <summary>Plan actors that are playable characters the field already has, by actor id.</summary>
+    private readonly Dictionary<string, FieldModels.ModelGroup> _existingActors = new(StringComparer.Ordinal);
     private readonly List<ActorGroup> _actorGroups = [];
     private readonly List<ActorGroup> _lineGroups = [];
     private readonly Dictionary<string, int> _textIds = new(StringComparer.Ordinal);
@@ -129,6 +141,8 @@ internal sealed class SceneScriptEmitter
         _walkmesh = walkmesh is { HasTriangle: true } ? walkmesh : LayoutGenerator.WalkmeshOf(field);
         _camera = field.Camera is { HasCamera: true } ca ? ca.Cameras[0] : null;
         _modelLoaderCount = field.ModelLoader?.ModelCount ?? 0;
+        _modelLoader = field.ModelLoader;
+        _traffic = FieldTraffic.Of(field, _walkmesh);
         _out = new SceneEmission { DirectorName = directorName };
     }
 
@@ -323,11 +337,40 @@ internal sealed class SceneScriptEmitter
 
     private void CreateActorGroups(int firstIndex)
     {
-        var existingModels = _section.GrpScripts.Count(static g => g.Type == GrpScriptType.Model);
+        var models = FieldModels.Of(_section);
+
+        // The CHAR argument indexes the Model Loader by model-group rank, so appended entries only
+        // line up with their groups when the loader has one entry per existing model group (true for
+        // every shipped field).
+        var loaderAligned = _modelLoader != null && _modelLoaderCount == models.Groups.Count;
+
         var index = firstIndex;
-        var modelId = existingModels;
+        var modelId = models.Groups.Count;
         foreach (var actor in _plan.Actors)
         {
+            // A party member the field already has is the player's own entity: reuse it.
+            if (FieldModels.PartyCharIdOf(actor) is { } charId && models.PlayableGroup(charId) is { } playable)
+            {
+                if (_existingActors.TryAdd(actor.Id, playable))
+                {
+                    // Only used to place the speaker's dialog windows; the player starts wherever
+                    // the gateway into this field puts them.
+                    var (px, py, pz, _) = Place(actor.Position, $"actor '{actor.Id}'", needTriangle: false);
+                    _actorStart.TryAdd(actor.Id, (px, py, pz));
+                    _out.Notes.Add($"actor '{actor.Id}' is the field's playable character (group \"{playable.Name}\"); no new entity is created.");
+                }
+
+                continue;
+            }
+
+            var template = models.ByName(actor.Model);
+            if (template == null && models.DefaultTemplate is { } fallback)
+            {
+                template = fallback;
+                if (!string.IsNullOrWhiteSpace(actor.Model))
+                    Warn($"actor '{actor.Id}': model '{actor.Model}' is not a model group of this field; using \"{template.Name}\".");
+            }
+
             var name = UniqueName(actor.Id, "actor", _usedNames);
             _usedNames.Add(name);
             var group = new ActorGroup(index, name, actor.Id);
@@ -335,23 +378,53 @@ internal sealed class SceneScriptEmitter
             if (!_actors.TryAdd(actor.Id, group))
                 Warn($"Duplicate actor id '{actor.Id}': group \"{name}\" is created but steps address the first one.");
 
-            // Section1File::modelID(): a model group's model is its rank among model groups.
+            // Section1File::modelID(): a model group's model is its rank among model groups, so the
+            // copied Model Loader entry is appended at that same rank.
+            if (template != null && loaderAligned && _modelLoader != null)
+            {
+                var source = _modelLoader.Models[template.ModelId];
+                _out.NewModels.Add(source with { Id = modelId });
+                _out.Notes.Add($"actor '{actor.Id}' reuses the model of group \"{template.Name}\" ({source.HrcName}) as model {modelId}.");
+            }
+            else
+            {
+                WarnOnce("no-model-template", template == null
+                    ? "The field has no Model Loader entry to copy, so new actors use model ids it does not load; " +
+                      "add matching models in the Model Loader before running the field in game."
+                    : $"The field's Model Loader lists {_modelLoaderCount} model(s) but Section 1 has {models.Groups.Count} model group(s), " +
+                      "so no entries were added for the new actors; fix the Model Loader before running the field in game.");
+            }
+
             group.Init.Char((byte)Math.Min(modelId, byte.MaxValue));
             var (x, y, z, triangle) = Place(actor.Position, $"actor '{actor.Id}'");
             group.Init.Xyzi(x, y, z, triangle);
             _actorStart.TryAdd(actor.Id, (x, y, z));
             if (actor.Facing.HasValue)
                 group.Init.Dir(DirectionByte(actor.Facing.Value));
+
+            // Layout keeps actors out of the field's traffic when it can; one still in the way (no
+            // clear spot, or a plan applied without layout) must not block scripted scenes or the player.
+            var at = new Point(x, y);
+            if (_walkmesh != null && !_traffic.IsEmpty)
+            {
+                var blockingAt = new[] { at }
+                    .Concat(FlattenSteps(_plan.Events.SelectMany(static e => e.Steps))
+                        .Where(s => s.Type == EventStepType.Move && s.ActorId == actor.Id)
+                        .Select(static s => s.To))
+                    .FirstOrDefault(p => !_traffic.IsClear(p, _placedActors), new Point(int.MinValue, int.MinValue));
+                if (blockingAt.X != int.MinValue)
+                {
+                    group.Init.Solid(false);
+                    Warn($"actor '{actor.Id}' {(blockingAt.Equals(at) ? "stands" : $"walks to {blockingAt.X},{blockingAt.Y}, which is")} in the way of " +
+                         "the field's scripted paths, triggers or exits; it is made non-solid so it cannot block them.");
+                }
+            }
+
+            _placedActors.Add(at);
             group.Init.Ret();
 
             index++;
             modelId++;
-        }
-
-        if (_plan.Actors.Count > 0 && modelId > _modelLoaderCount)
-        {
-            Warn($"The field's model loader lists {_modelLoaderCount} model(s) but the new actors use model ids " +
-                 $"{existingModels}-{modelId - 1}; add matching models in the Model Loader before running the field in game.");
         }
     }
 
@@ -504,7 +577,9 @@ internal sealed class SceneScriptEmitter
     {
         if (!_actors.TryGetValue(step.ActorId, out var target))
         {
-            Warn($"{path}: '{step.ActorId}' is not a plan actor; skipped.");
+            Warn(_existingActors.TryGetValue(step.ActorId, out var playable)
+                ? $"{path}: '{step.ActorId}' is the player's character (group \"{playable.Name}\"); moving or turning it is not emitted."
+                : $"{path}: '{step.ActorId}' is not a plan actor; skipped.");
             return;
         }
 
