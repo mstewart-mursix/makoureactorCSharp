@@ -278,7 +278,7 @@ public sealed class FieldPC : Field
                         : section.Section == FieldSection.Walkmesh && Walkmesh != null
                             ? Walkmesh.Save()
                             : section.Section == FieldSection.ModelLoader && ModelLoader != null
-                                ? ModelLoader.Save()
+                                ? ModelLoader.Save(ScriptsAndTexts?.Scale)
                                 : section.Section == FieldSection.Inf && Inf != null
                                     ? Inf.Save()
                                     : section.Section == FieldSection.Background && _backgroundSectionOverride != null
