@@ -41,6 +41,7 @@ public static class PromptBuilder
             pose?: "idle"|"talk"|"walk";
             position?: { x: number; y: number };
             facing?: "N"|"S"|"E"|"W";
+            model?: string;               // existing model group to copy the 3D model from (see field context)
           }[];
           dialog?: {
             speakerId: string;            // must match actors.id (or "narrator")
@@ -102,19 +103,17 @@ public static class PromptBuilder
         if (p.GenScripts)
         {
             lines.Add("- Events that should run by themselves when the field loads use trigger \"on_enter\".");
-            lines.Add("- Only these steps become game script: say, wait, battle (encounterId a plain number) and");
-            lines.Add("  give_item (itemId a plain number). Other steps are kept as notes, so prefer these for the core scene.");
+            lines.Add("- battle encounterId and give_item itemId must be plain numbers to become game script.");
         }
 
         lines.Add("- Avoid overlapping placements; respect basic walkable regions if mentioned.");
         lines.Add("- Keep result coherent and lore-friendly.");
         if (!string.IsNullOrWhiteSpace(fieldContext))
         {
-            lines.Add(string.Empty);
-            lines.Add("Field Context:");
-            lines.Add(fieldContext.Trim());
-            lines.Add("Place all positions inside the walkable region described above. " +
-                      "Do not reuse existing group names.");
+            lines.Add("- Playable characters the field already has (listed as playable below) are the player's own");
+            lines.Add("  characters: use their name as the actor id (e.g. \"cloud\") and they are reused, not duplicated.");
+            lines.Add("- Every other actor reuses the 3D model of an existing character/NPC group: set actors[].model");
+            lines.Add("  to that group's name (pick the closest look, e.g. a guard for a guard).");
         }
 
         lines.Add(string.Empty);

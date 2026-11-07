@@ -75,6 +75,53 @@ public sealed class FLevelIntegrationTests
         mismatches.Should().BeEmpty();
     }
 
+    [Fact]
+    public void mr_test_flevel_new_actors_get_model_loader_entries_in_every_field_when_configured()
+    {
+        var archivePath = TestArchivePath();
+        if (archivePath == null)
+            return;
+
+        var archive = FieldArchive.Open(archivePath);
+        var problems = new List<string>();
+        foreach (var entry in archive.FieldEntries)
+        {
+            var field = archive.OpenField(entry.Name);
+            if (field.ScriptsAndTexts == null || field.ModelLoader == null)
+                continue;
+
+            var before = field.ModelLoader.Models.ToList();
+            var plan = new ScenePlan();
+            plan.Actors.Add(new Actor("cloud", "Cloud"));
+            plan.Actors.Add(new Actor("npc_a", "Guard"));
+            plan.Actors.Add(new Actor("npc_b", "Guard", x: 30, y: 30));
+            var result = MakouReactor.AI.Mapping.ScenePlanMapper.ApplyToField(plan, field, new ApplyOptions { PreviewOnly = false });
+            if (!result.Ok)
+            {
+                problems.Add($"{entry.Name}: {result.Error}");
+                continue;
+            }
+
+            var reopened = FieldPC.OpenDecompressed(entry.Name, field.SaveDecompressed());
+            var section = reopened.ScriptsAndTexts!;
+            var models = reopened.ModelLoader!.Models;
+            var modelGroups = section.GrpScripts.Count(g => g.Type == GrpScriptType.Model);
+            if (modelGroups != models.Count)
+                problems.Add($"{entry.Name}: {modelGroups} model groups but {models.Count} Model Loader entries");
+
+            // Existing entries are untouched and every new one is a byte-identical copy of an old one.
+            if (!models.Take(before.Count).Select(m => m.HrcName).SequenceEqual(before.Select(m => m.HrcName)))
+                problems.Add($"{entry.Name}: existing Model Loader entries changed");
+            foreach (var added in models.Skip(before.Count))
+            {
+                if (!before.Any(b => b.HrcName == added.HrcName && b.Animations.Select(a => a.Name).SequenceEqual(added.Animations.Select(a => a.Name))))
+                    problems.Add($"{entry.Name}: new entry {added.HrcName} is not a copy of an existing model");
+            }
+        }
+
+        problems.Should().BeEmpty();
+    }
+
     private static string? TestArchivePath()
     {
         var path = Environment.GetEnvironmentVariable("MR_TEST_FLEVEL");

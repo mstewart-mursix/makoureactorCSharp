@@ -51,7 +51,7 @@ public sealed class ScenePlanMapperEmissionTests
         result.Warnings.Should().Contain(w => w.Contains("'potion'") && w.Contains("STITM not emitted"));
         result.Warnings.Should().Contain(w => w.Contains("off the walkmesh"));
         result.Warnings.Should().Contain(w => w.Contains("speed") && w.Contains("ignored"));
-        result.Warnings.Should().Contain(w => w.Contains("model loader"));
+        result.Warnings.Should().Contain(w => w.Contains("Model Loader"));
         result.Summary.Should().Contain("Group 1 \"LLM_Test\" (director)")
             .And.Contain("S1 - Talk")
             .And.Contain("Added 4 dialogue text entries starting at text 2.")

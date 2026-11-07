@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 
 using MakouReactor.AI.Layout;
+using MakouReactor.AI.Mapping;
 using MakouReactor.Core.Models;
 
 namespace MakouReactor.AI.Prompt;
@@ -117,13 +118,37 @@ public static class FieldContextBuilder
         if (scripts == null || scripts.GrpScriptCount == 0)
             return string.Empty;
 
+        var models = FieldModels.Of(scripts);
+        var byIndex = models.Groups.ToDictionary(static g => g.GroupIndex);
         var sb = new StringBuilder("Existing groups (do not reuse these names):\n");
         var names = scripts.GrpScripts
-            .Select(g => g.Type == GrpScriptType.Model ? $"{g.Name} (character/NPC)" : g.Name)
+            .Select((g, index) => !byIndex.TryGetValue(index, out var model)
+                ? g.Name
+                : model.PartyCharId is { } charId
+                    ? $"{g.Name} (playable: {PartyName(charId)})"
+                    : $"{g.Name} (character/NPC)")
             .Where(n => !string.IsNullOrWhiteSpace(n));
         sb.Append("- ").Append(string.Join(", ", names));
+
+        var reusable = models.Groups.Where(static g => g.PartyCharId == null).Select(static g => g.Name).ToList();
+        if (reusable.Count > 0)
+            sb.Append("\nModels new actors can reuse (actors[].model): ").Append(string.Join(", ", reusable));
         return sb.ToString();
     }
+
+    private static string PartyName(byte charId) => charId switch
+    {
+        0 => "Cloud",
+        1 => "Barret",
+        2 => "Tifa",
+        3 => "Aeris",
+        4 => "Red XIII",
+        5 => "Yuffie",
+        6 => "Cait Sith",
+        7 => "Vincent",
+        8 => "Cid",
+        _ => $"character {charId}",
+    };
 
     private static string DescribeExits(InfFile? inf)
     {

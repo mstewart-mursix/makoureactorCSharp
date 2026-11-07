@@ -263,6 +263,9 @@ public static class ScenePlanParser
                 actor.Facing = faceStr[0];
             }
 
+            if (v.TryGetProperty("model", out var model) && model.ValueKind == JsonValueKind.String)
+                actor.Model = model.GetString();
+
             list.Add(actor);
         }
 
