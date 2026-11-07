@@ -126,6 +126,22 @@ public class Section1FileTests
     }
 
     [Fact]
+    public void spcnm_text_references_are_tracked_and_shifted()
+    {
+        // SPECIAL/SPCNM: 0x0F 0xFD charID textID.
+        var data = BuildSection1WithScriptAndTexts(
+            [0x0F, 0xFD, 0x00, 0x01],
+            ["Unused zero", "Name text", "Unused two"]);
+        var section = Section1File.Open(data);
+
+        section.ListUsedTexts().Should().Equal(1);
+
+        section.InsertText(1, new FF7String("Inserted"));
+
+        section.GrpScripts[0].Scripts[0].RawBytes.ToArray().Should().Equal([0x0F, 0xFD, 0x00, 0x02]);
+    }
+
+    [Fact]
     public void clean_unused_texts_blanks_only_unreferenced_entries()
     {
         var data = BuildSection1WithScriptAndTexts(

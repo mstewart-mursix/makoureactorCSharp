@@ -167,6 +167,7 @@ public sealed class Script
                     "MESSAGE" when opcode.Bytes.Length >= 3 => 2,
                     "MPNAM" when opcode.Bytes.Length >= 2 => 1,
                     "ASK" when opcode.Bytes.Length >= 4 => 3,
+                    "SPECIAL" when IsSpcnm(opcode) => 3,
                     _ => -1,
                 };
                 if (textOffset < 0)
@@ -291,6 +292,7 @@ public sealed class Script
                 "MESSAGE" when opcode.Bytes.Length >= 3 => opcode.Bytes[2],
                 "MPNAM" when opcode.Bytes.Length >= 2 => opcode.Bytes[1],
                 "ASK" when opcode.Bytes.Length >= 4 => opcode.Bytes[3],
+                "SPECIAL" when IsSpcnm(opcode) => opcode.Bytes[3],
                 _ => -1,
             };
             if (textId >= 0)
@@ -309,6 +311,12 @@ public sealed class Script
     {
         return string.Join(", ", _opcodes.Select(o => o.Id.ToString()));
     }
+
+    /// <summary>
+    /// SPECIAL/SPCNM (0x0F 0xFD charID textID) names a character from a text, so it references a
+    /// text id like MESSAGE does (<c>Opcode::textID</c> in the C++).
+    /// </summary>
+    private static bool IsSpcnm(RawOpcode opcode) => opcode.Bytes.Length >= 4 && opcode.Bytes[1] == 0xFD;
 
     private static byte ClampByte(int value) => (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
 
