@@ -82,6 +82,9 @@ if(MR_ENABLE_LLM_GENERATOR)
 endif()
 
 find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Widgets OpenGLWidgets Svg OpenGL LinguistTools Core5Compat Xml Quick Network REQUIRED)
+# include(CTest) defines the BUILD_TESTING option, so it must come before
+# anything that checks BUILD_TESTING (the Test component and mr_tests below).
+include(CTest)
 if(BUILD_TESTING)
     find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Test REQUIRED)
 endif()
@@ -719,8 +722,8 @@ set(CPACK_SOURCE_IGNORE_FILES ".git/*;*.user;*.yml;*.github/*")
 set(CPACK_SOURCE_GENERATOR "ZIP;TGZ")
 
 include(CPack)
+
 # Tests (Qt Test)
-include(CTest)
 if(BUILD_TESTING)
     add_executable(mr_tests
         tests/TestScenePlan.cpp
@@ -734,7 +737,7 @@ if(BUILD_TESTING)
         src/ai/ScenePlanMapper.h
         src/ai/ScenePlanMapper.cpp
     )
-    target_link_libraries(mr_tests PRIVATE Qt6::Core Qt6::Test)
+    target_link_libraries(mr_tests PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Test)
     target_include_directories(mr_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
     target_compile_definitions(mr_tests PRIVATE LLM_MAPPER_PREVIEW_ONLY=1)
     add_test(NAME ScenePlanTests COMMAND mr_tests)
